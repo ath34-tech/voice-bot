@@ -1,3 +1,5 @@
+import os
+import json
 import logging
 from typing import Optional
 from schemas import SurveyState, Answer, LLMResponse
@@ -18,6 +20,17 @@ class StateManager:
             self.state.current_question = first_q.id
             self.state.status = "in_progress"
             logger.info(f"Survey started. First question: {first_q.id}")
+            self.save_state()
+
+    def save_state(self):
+        os.makedirs("data", exist_ok=True)
+        file_path = f"data/{self.session_id}_assessment.json"
+        with open(file_path, "w", encoding="utf-8") as f:
+            # Pydantic v2 support; fallback to json() if needed
+            if hasattr(self.state, "model_dump_json"):
+                f.write(self.state.model_dump_json(indent=2))
+            else:
+                f.write(self.state.json(indent=2))
 
     def get_current_question(self):
         if not self.state.current_question:
@@ -80,3 +93,4 @@ class StateManager:
                 self.state.status = "completed"
 
         # "REPEAT" does nothing to the state.
+        self.save_state()

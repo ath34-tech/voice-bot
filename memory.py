@@ -1,3 +1,4 @@
+import os
 import json
 from typing import List
 from schemas import TranscriptTurn, SurveyState, Question
@@ -16,6 +17,7 @@ class MemoryManager:
             speaker="student",
             text=text
         ))
+        self.save_transcript()
         return self.turn_counter
 
     def add_ai_turn(self, text: str):
@@ -26,6 +28,22 @@ class MemoryManager:
             speaker="assistant",
             text=text
         ))
+        self.save_transcript()
+
+    def save_transcript(self):
+        os.makedirs("data", exist_ok=True)
+        file_path = f"data/{self.session_id}_conversation.json"
+        
+        # Pydantic v2 support; fallback to dict() if needed
+        data = []
+        for turn in self.transcript:
+            if hasattr(turn, "model_dump"):
+                data.append(turn.model_dump())
+            else:
+                data.append(turn.dict())
+                
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
 
     def get_recent_turns(self, count: int = 6) -> str:
         recent = self.transcript[-count:] if self.transcript else []
