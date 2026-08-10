@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Voice Agent</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 40px; background: #111; color: #fff; max-width: 800px; margin: 0 auto; }
+        button { padding: 15px 30px; font-size: 16px; background: #00ff88; border: none; cursor: pointer; font-weight: bold; border-radius: 5px; color: #000; }
+        button:hover { background: #00cc6a; }
+        #chat-box { 
+            margin-top: 30px; 
+            border: 1px solid #333; 
+            padding: 20px; 
+            height: 400px; 
+            overflow-y: auto; 
+            background: #1a1a1a;
+            border-radius: 8px;
+            font-size: 18px;
+        }
+        .message { margin-bottom: 15px; line-height: 1.5; }
+        .sender-AI { color: #00ff88; font-weight: bold; }
+        .sender-User { color: #00ccff; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h2>LiveKit Audio Agent</h2>
+    <p>Click the button below to connect to the voice agent.</p>
+    
+    <button id="connectBtn">Start Call</button>
+    
+    <div id="chat-box">
+        <p class="message" style="color: #7f8c8d; font-style: italic;">Chat will appear here...</p>
+    </div>
+    
+    <div id="audio-container"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
+    <script>
+        document.getElementById('connectBtn').onclick = async () => {
+            document.getElementById('connectBtn').innerText = "Connecting...";
+            document.getElementById('connectBtn').disabled = true;
+
+            try {
+                const response = await fetch('http://127.0.0.1:8000/start_call', { method: 'POST' });
+                const data = await response.json();
+                
+                const room = new LivekitClient.Room();
+
+                room.on(LivekitClient.RoomEvent.TrackSubscribed, (track) => {
+                    if (track.kind === LivekitClient.Track.Kind.Audio) {
+                        const audioElement = track.attach();
+                        document.getElementById('audio-container').appendChild(audioElement);
+                    }
+                });
+                
+                room.on(LivekitClient.RoomEvent.DataReceived, (payload, participant, kind, topic) => {
+                    const decoder = new TextDecoder();
+                    const data = JSON.parse(decoder.decode(payload));
+                    const chatBox = document.getElementById('chat-box');
+                    
+                    if (data.sender === "AI" && data.is_stream !== undefined) {
+                        if (data.is_stream === false) {
+                            const msgElement = document.createElement('p');
+                            msgElement.className = 'message ai-message-stream';
+                            msgElement.innerHTML = `<span class="sender-AI">AI:</span> <span class="stream-content"></span>`;
+                            chatBox.appendChild(msgElement);
+                        } else {
+                            const allAiMessages = document.querySelectorAll('.ai-message-stream .stream-content');
+                            if (allAiMessages.length > 0) {
+                                const lastAiMessage = allAiMessages[allAiMessages.length - 1];
+                                lastAiMessage.innerText += data.text;
+                            }
+                        }
+                    } else {
+                        const msgElement = document.createElement('p');
+                        msgElement.className = 'message';
+                        msgElement.innerHTML = `<span class="sender-${data.sender}">${data.sender}:</span> ${data.text}`;
+                        chatBox.appendChild(msgElement);
+                    }
+                    
+                    chatBox.scrollTop = chatBox.scrollHeight;
+                });
+
+                await room.connect(data.livekit_url, data.user_token);
+                await room.localParticipant.setMicrophoneEnabled(true);
+                
+                document.getElementById('connectBtn').innerText = `Connected!`;
+                document.getElementById('connectBtn').style.background = "#555";
+            } catch (e) {
+                console.error("Connection error:", e);
+                alert("Failed to connect. Is server.py running?");
+                document.getElementById('connectBtn').innerText = "Start Call";
+                document.getElementById('connectBtn').disabled = false;
+            }
+        };
+    </script>
+</body>
+</html>
