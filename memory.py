@@ -84,5 +84,10 @@ The JSON must follow this exact schema:
   } or null,
   "response": "The exact natural spoken response you will say to the student."
 }
+
+CRITICAL RULES FOR "action":
+- If the student has successfully answered the CURRENT QUESTION and you are moving on to the next topic, you MUST set action to "NEXT_QUESTION" and provide their extracted "answer". This triggers the system to save their answer.
+- If you are probing for more details, or asking the CURRENT QUESTION for the first time, use "ASK".
+- NEVER use "ASK" when you intend to move to a new question. Use "NEXT_QUESTION".
 """
         return prompt

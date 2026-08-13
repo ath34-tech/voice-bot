@@ -11,7 +11,7 @@ from memory import MemoryManager
 logger = logging.getLogger(__name__)
 
 class Pipeline:
-    def __init__(self, room: rtc.Room):
+    def __init__(self, room: rtc.Room, session_id: str):
         self.room = room
         self.stt = DeepgramSTT()
         self.llm = GroqClient()
@@ -28,8 +28,7 @@ class Pipeline:
         self.stt.on_speech_started = self._handle_interruption
 
         # Survey Engine State
-        # In a real app we'd use room.name or a session ID passed down
-        self.session_id = room.name
+        self.session_id = session_id
         self.state_manager = StateManager(self.session_id)
         self.memory_manager = MemoryManager(self.session_id)
 

@@ -39,7 +39,7 @@ class StateManager:
 
     def apply_llm_response(self, llm_resp: LLMResponse, raw_text: str, turn_id: int):
         """Advances state based on LLM decision."""
-        if llm_resp.action in ("NEXT_QUESTION", "ASK"):
+        if llm_resp.action == "NEXT_QUESTION":
             # Save the answer if one exists
             if llm_resp.answer and self.state.current_question:
                 self.state.answers[self.state.current_question] = Answer(
@@ -62,6 +62,9 @@ class StateManager:
                 self.state.current_question = None
                 self.state.status = "completed"
                 logger.info("Survey completed.")
+
+        elif llm_resp.action == "ASK":
+            logger.info(f"LLM asked/re-asked the current question: {self.state.current_question}")
 
         elif llm_resp.action == "CLARIFY":
             self.state.clarification_attempts += 1

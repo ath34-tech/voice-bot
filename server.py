@@ -57,7 +57,7 @@ async def spawn_bot_in_background(room_name: str):
     client = LiveKitClient()
     
     # Initialize and start the AI Pipeline FIRST (connects to Deepgram)
-    client.pipeline = Pipeline(client.room)
+    client.pipeline = Pipeline(client.room, session_id=room_name)
     await client.pipeline.start()
     
     # NOW connect to LiveKit so we are ready to process incoming audio
