@@ -2,7 +2,7 @@ import asyncio
 import logging
 from livekit import rtc
 from stt import DeepgramSTT
-from llm import GroqClient
+from llm import LLMClient
 from tts import DeepgramTTS
 
 from state import StateManager
@@ -14,7 +14,7 @@ class Pipeline:
     def __init__(self, room: rtc.Room, session_id: str):
         self.room = room
         self.stt = DeepgramSTT()
-        self.llm = GroqClient()
+        self.llm = LLMClient()
         self.tts = DeepgramTTS()
 
         self.sample_rate = 48000
@@ -83,10 +83,11 @@ class Pipeline:
 
                 # Build Context for LLM
                 current_question = self.state_manager.get_current_question()
-                prompt = self.memory_manager.build_llm_prompt(self.state_manager.state, current_question)
+                next_q = self.state_manager.questionnaire.get_next_question(current_question.id) if current_question else None
+                prompt = self.memory_manager.build_llm_prompt(self.state_manager.state, current_question, next_q)
 
                 # Call LLM
-                llm_response = await self.llm.get_structured_decision(prompt)
+                llm_response = await self.llm.get_conversational_decision(prompt)
                 
                 await self.send_text_to_frontend("", "AI", is_stream=False)
                 await self.send_text_to_frontend(llm_response.response, "AI", is_stream=True)
@@ -104,8 +105,14 @@ class Pipeline:
                 # Add AI response to memory
                 self.memory_manager.add_ai_turn(llm_response.response)
 
+                # If moving to next question, trigger extractor in background
+                if llm_response.action == "NEXT_QUESTION" and current_question:
+                    q_id = current_question.id
+                    extractor_prompt = self.memory_manager.build_extractor_prompt(current_question, transcript)
+                    asyncio.create_task(self._run_extractor(q_id, extractor_prompt, transcript, turn_id))
+
                 # Update State Machine
-                self.state_manager.apply_llm_response(llm_response, transcript, turn_id)
+                self.state_manager.apply_llm_response(llm_response)
 
                 if self.state_manager.state.status == "completed":
                     logger.info("Survey completed. AI session winding down.")
@@ -119,6 +126,11 @@ class Pipeline:
             logger.info("Pipeline loop cancelled.")
         except Exception as e:
             logger.error(f"Error in pipeline loop: {e}", exc_info=True)
+
+    async def _run_extractor(self, q_id: str, prompt: str, raw_text: str, turn_id: int):
+        logger.info(f"Triggering background extractor for {q_id}...")
+        extraction_resp = await self.llm.extract_answer(prompt)
+        self.state_manager.apply_extraction(q_id, extraction_resp, raw_text, turn_id)
 
     async def _speak(self, text: str):
         logger.info(f"🔊 Bot speaking: {text}")

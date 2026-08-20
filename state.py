@@ -2,7 +2,7 @@ import os
 import json
 import logging
 from typing import Optional
-from schemas import SurveyState, Answer, LLMResponse
+from schemas import SurveyState, Answer, ConversationalResponse, ExtractionResponse
 from questionnaire import Questionnaire
 
 logger = logging.getLogger(__name__)
@@ -37,20 +37,24 @@ class StateManager:
             return None
         return self.questionnaire.get_question(self.state.current_question)
 
-    def apply_llm_response(self, llm_resp: LLMResponse, raw_text: str, turn_id: int):
+    def apply_llm_response(self, llm_resp: ConversationalResponse):
         """Advances state based on LLM decision."""
+        # Intercept FOLLOWUP if depth limit reached (per-question max_followups or default 3)
+        current_q = self.get_current_question()
+        max_depth = (current_q.max_followups if current_q and current_q.max_followups is not None else 3)
+        if llm_resp.action == "FOLLOWUP":
+            if self.state.followup_depth >= max_depth:
+                logger.info(f"Max followup depth ({max_depth}) reached for {self.state.current_question}. Forcing NEXT_QUESTION.")
+                llm_resp.action = "NEXT_QUESTION"
+
         if llm_resp.action == "NEXT_QUESTION":
-            # Save the answer if one exists
-            if llm_resp.answer and self.state.current_question:
-                self.state.answers[self.state.current_question] = Answer(
-                    question_id=self.state.current_question,
-                    raw_response=raw_text,
-                    normalized_answer=llm_resp.answer.value,
-                    confidence=llm_resp.answer.confidence,
-                    turn_id=turn_id
-                )
-                self.state.completed_questions.append(self.state.current_question)
-                logger.info(f"Answer saved for {self.state.current_question}: {llm_resp.answer.value}")
+            # Reset followup state
+            self.state.is_in_followup = False
+            self.state.followup_depth = 0
+            
+            if self.state.current_question:
+                if self.state.current_question not in self.state.completed_questions:
+                    self.state.completed_questions.append(self.state.current_question)
             
             # Advance to next question
             next_q = self.questionnaire.get_next_question(self.state.current_question)
@@ -65,6 +69,11 @@ class StateManager:
 
         elif llm_resp.action == "ASK":
             logger.info(f"LLM asked/re-asked the current question: {self.state.current_question}")
+
+        elif llm_resp.action == "FOLLOWUP":
+            self.state.is_in_followup = True
+            self.state.followup_depth += 1
+            logger.info(f"Diverging to FOLLOWUP branch (Depth: {self.state.followup_depth})")
 
         elif llm_resp.action == "CLARIFY":
             self.state.clarification_attempts += 1
@@ -97,3 +106,15 @@ class StateManager:
 
         # "REPEAT" does nothing to the state.
         self.save_state()
+
+    def apply_extraction(self, question_id: str, extraction_resp: ExtractionResponse, raw_text: str, turn_id: int):
+        if extraction_resp.answer and extraction_resp.answer_status == "answered":
+            self.state.answers[question_id] = Answer(
+                question_id=question_id,
+                raw_response=raw_text,
+                normalized_answer=extraction_resp.answer.value,
+                confidence=extraction_resp.answer.confidence,
+                turn_id=turn_id
+            )
+            logger.info(f"Background Extraction saved for {question_id}: {extraction_resp.answer.value}")
+            self.save_state()

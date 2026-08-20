@@ -41,3 +41,5 @@ class DeepgramTTS:
                     if not chunk:
                         break
                     yield chunk
+
+

@@ -15,6 +15,11 @@ class Settings:
     GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
     DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
     GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+    
+    LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini")
+    GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
+    GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+    EXTRACTOR_MODEL = os.getenv("EXTRACTOR_MODEL", "gemini-2.5-flash-lite")
 
 
 settings = Settings()

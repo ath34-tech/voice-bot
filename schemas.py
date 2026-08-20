@@ -8,6 +8,8 @@ class Question(BaseModel):
     type: Literal["free_text", "single_choice", "multi_choice", "numeric", "numeric / approximate", "numeric / free_text", "yes_no + qualitative_followup", "categorical", "free_text / categorical"]
     options: Optional[List[str]] = None
     expected_target: Optional[str] = None
+    allow_followup: bool = True
+    max_followups: Optional[int] = None
 
 
 class AnswerData(BaseModel):
@@ -38,10 +40,14 @@ class SurveyState(BaseModel):
     completed_questions: List[str] = Field(default_factory=list)
     answers: Dict[str, Answer] = Field(default_factory=dict)
     clarification_attempts: int = 0
+    is_in_followup: bool = False
+    followup_depth: int = 0
 
 
-class LLMResponse(BaseModel):
-    action: Literal["NEXT_QUESTION", "ASK", "CLARIFY", "REPEAT", "SKIP", "COMPLETE", "ERROR"]
+class ConversationalResponse(BaseModel):
+    action: Literal["NEXT_QUESTION", "ASK", "CLARIFY", "FOLLOWUP", "REPEAT", "SKIP", "COMPLETE", "ERROR"]
+    response: str  # The text to be spoken
+
+class ExtractionResponse(BaseModel):
     answer_status: Literal["answered", "ambiguous", "unknown", "refused", "pending"]
     answer: Optional[AnswerData] = None
-    response: str  # The text to be spoken
