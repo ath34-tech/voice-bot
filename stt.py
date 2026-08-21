@@ -2,6 +2,9 @@ import asyncio
 import logging
 import os
 import json
+import io
+import wave
+import aiohttp
 import websockets
 from websockets.exceptions import ConnectionClosed, ConnectionClosedError
 
@@ -11,10 +14,11 @@ logger = logging.getLogger(__name__)
 
 # Deepgram connection URL with 3.5s silence threshold (3500ms endpointing)
 _ENDPOINT_MS = getattr(settings, 'DEEPGRAM_STT_ENDPOINTING_MS', '3500')
+_STT_LANG = getattr(settings, 'DEEPGRAM_STT_LANGUAGE', 'hi')
 _DEEPGRAM_URL = (
     "wss://api.deepgram.com/v1/listen?"
     "model=nova-2&"
-    "language=en-US&"
+    f"language={_STT_LANG}&"
     "smart_format=true&"
     "encoding=linear16&"
     "channels=1&"
@@ -42,19 +46,15 @@ class DeepgramSTT:
         self._utterance_parts = []
         self.on_speech_started = None  # Barge-in callback: fn(transcript_text)
 
-    # ------------------------------------------------------------------ #
-    #  Public interface                                                    #
-    # ------------------------------------------------------------------ #
-
     async def connect(self):
-        """Establish the initial WebSocket connection to Deepgram and start loops."""
-        logger.info("Connecting to Deepgram...")
+        """Establish initial WebSocket connection to Deepgram."""
+        logger.info("Connecting to Deepgram STT...")
         self._running = True
         await self._do_connect()
-        logger.info("Deepgram connected successfully.")
+        logger.info("Deepgram STT connected successfully.")
 
     async def send_audio(self, audio_data: bytes):
-        """Send raw PCM audio bytes to Deepgram. Silently dropped if not connected."""
+        """Send raw PCM audio bytes to Deepgram."""
         if self.connection is None or not self._running:
             return
         try:
@@ -76,7 +76,7 @@ class DeepgramSTT:
                 if not self._running:
                     return ""
                 if self.connection is None:
-                    logger.warning("⚡ STT queue timeout with no connection — forcing reconnect...")
+                    logger.warning("⚡ Deepgram STT queue timeout with no connection — forcing reconnect...")
                     asyncio.create_task(self._reconnect())
         return ""
 
@@ -90,14 +90,9 @@ class DeepgramSTT:
             except Exception:
                 pass
             self.connection = None
-        logger.info("Disconnected from Deepgram.")
-
-    # ------------------------------------------------------------------ #
-    #  Internal: connection management                                     #
-    # ------------------------------------------------------------------ #
+        logger.info("Disconnected from Deepgram STT.")
 
     async def _do_connect(self):
-        """Open the WebSocket and (re)start the background tasks."""
         self._cancel_tasks()
 
         self.connection = await websockets.connect(
@@ -137,10 +132,6 @@ class DeepgramSTT:
                 delay = min(delay * 2, 30)
 
         logger.error("❌ Deepgram reconnect failed after all attempts. STT unavailable.")
-
-    # ------------------------------------------------------------------ #
-    #  Background tasks                                                   #
-    # ------------------------------------------------------------------ #
 
     async def _keepalive_loop(self):
         try:
@@ -222,3 +213,87 @@ class DeepgramSTT:
             if self._running:
                 logger.error(f"Deepgram receive error: {e}", exc_info=True)
                 asyncio.create_task(self._reconnect())
+
+
+class SarvamSTT:
+    def __init__(self):
+        self.api_key = getattr(settings, 'SARVAM_API_KEY', None) or os.getenv("SARVAM_API_KEY")
+        if not self.api_key:
+            raise ValueError("SARVAM_API_KEY is not set in environment variables.")
+
+        self.model = getattr(settings, 'SARVAM_STT_MODEL', 'saarika:v2')
+        self.language_code = getattr(settings, 'SARVAM_STT_LANGUAGE', 'hi-IN')
+        self.transcript_queue: asyncio.Queue[str] = asyncio.Queue()
+        self.on_speech_started = None
+        self._running = False
+        self._audio_chunks = []
+
+    async def connect(self):
+        logger.info(f"Connected Sarvam STT ({self.model}, language={self.language_code}).")
+        self._running = True
+
+    async def send_audio(self, audio_data: bytes):
+        if not self._running:
+            return
+        self._audio_chunks.append(audio_data)
+
+    async def receive_transcript(self) -> str:
+        """
+        Processes accumulated PCM audio chunks using Sarvam AI saarika:v2 Hindi/Hinglish STT API.
+        """
+        while self._running:
+            await asyncio.sleep(3.5)  # 3.5 seconds silence endpointing
+            if not self._audio_chunks:
+                continue
+
+            # Build WAV file in memory from 48kHz mono 16-bit PCM chunks
+            pcm_bytes = b"".join(self._audio_chunks)
+            self._audio_chunks.clear()
+
+            if len(pcm_bytes) < 9600:  # Skip tiny audio (<100ms)
+                continue
+
+            try:
+                wav_buffer = io.BytesIO()
+                with wave.open(wav_buffer, 'wb') as wav_file:
+                    wav_file.setnchannels(1)
+                    wav_file.setsampwidth(2)
+                    wav_file.setframerate(48000)
+                    wav_file.writeframes(pcm_bytes)
+
+                wav_bytes = wav_buffer.getvalue()
+
+                # Call Sarvam Speech-to-Text API
+                url = "https://api.sarvam.ai/speech-to-text"
+                headers = {"api-subscription-key": self.api_key}
+
+                data = aiohttp.FormData()
+                data.add_field('file', wav_bytes, filename='audio.wav', content_type='audio/wav')
+                data.add_field('model', self.model)
+                data.add_field('language_code', self.language_code)
+
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(url, headers=headers, data=data) as response:
+                        if response.status == 200:
+                            result = await response.json()
+                            transcript = result.get("transcript", "").strip()
+                            if transcript:
+                                logger.info(f"Sarvam STT Transcript: {transcript}")
+                                return transcript
+                        else:
+                            err_msg = await response.text()
+                            logger.error(f"Sarvam STT error ({response.status}): {err_msg}")
+            except Exception as e:
+                logger.error(f"Error calling Sarvam STT: {e}")
+
+        return ""
+
+    async def disconnect(self):
+        self._running = False
+        self._audio_chunks.clear()
+        logger.info("Disconnected from Sarvam STT.")
+
+
+# Provider Switcher: Select DeepgramSTT or SarvamSTT based on STT_PROVIDER
+if getattr(settings, 'STT_PROVIDER', 'deepgram').lower() == 'sarvam':
+    DeepgramSTT = SarvamSTT  # Drop-in replacement for Pipeline

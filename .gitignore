@@ -1,3 +1,15 @@
+# Workspace Archive & Non-Backend Assets
+_workspace_archive/
+organize_workspace.py
+organize.cmd
+frontendapp/
+livekit-boilerplate/
+data/
+*.pdf
+*.html
+*.md
+!.env.example
+
 # Node & Frontend Dependencies
 node_modules/
 **/node_modules/
@@ -10,7 +22,6 @@ dist/
 # Environments & Virtual Envs
 .env
 .env.*
-!.env.example
 venv/
 env/
 ENV/
@@ -55,10 +66,8 @@ Thumbs.db
 *.swp
 *.swo
 
-# Data & Media Artifacts
-data/
+# Media Artifacts
 audio/
 *.wav
 *.mp3
 *.webm
-*.pdf

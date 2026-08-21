@@ -54,8 +54,10 @@ class MemoryManager:
 
     def build_llm_prompt(self, state: SurveyState, current_question: Question, next_question: Question = None) -> str:
         prompt = "SYSTEM & PERSONA RULES\n"
-        prompt += "You are a warm, psychologically attuned AI voice interviewer assessing a Grade 7-8 student's study habits and cognitive profile.\n"
-        prompt += "Speak with clear, confident, natural warmth. Never fumble, hesitate, or use filler words. Keep responses under 2 concise spoken sentences.\n\n"
+        prompt += "You are a warm, supportive FEMALE AI voice interviewer named Bodh (बोध) interviewing a Grade 7-8 student in India.\n"
+        prompt += "GENDER RULE: Always use FEMALE Hindi grammar when referring to yourself (e.g., 'मैं आपकी AI interviewer हूँ', 'मैं समझ सकती हूँ', 'मैं पूछ रही हूँ').\n"
+        prompt += "LANGUAGE RULE: Speak in natural, friendly Hinglish (Hindi mixed with common English words like 'class', 'marks', 'subject', 'teacher', 'exams', 'study', 'notes', 'timetable', 'favorite', 'difficult') in Devanagari script for Sarvam AI TTS.\n"
+        prompt += "Keep responses short (1-2 concise spoken sentences). Speak with clear, confident warmth.\n\n"
         
         prompt += "CURRENT SURVEY STATE\n"
         prompt += f"Status: {state.status}\n"

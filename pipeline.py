@@ -38,7 +38,7 @@ class Pipeline:
         self.memory_manager = MemoryManager(self.session_id)
 
     def _handle_interruption(self, text: str = ""):
-        # Ignore mic speaker echo while bot is speaking to prevent self-interruption
+        # Ignore mic speaker echo to prevent false self-interruption
         pass
 
     async def start(self):
@@ -61,9 +61,7 @@ class Pipeline:
         logger.info("Pipeline stopped.")
 
     async def handle_audio_frame(self, frame: rtc.AudioFrame):
-        # Mute incoming mic feed to STT while bot is actively speaking to prevent echo feedback loops
-        if self._is_bot_speaking:
-            return
+        # Always stream 100% of student microphone audio to STT
         audio_data = bytes(frame.data)
         await self.stt.send_audio(audio_data)
 
@@ -95,7 +93,7 @@ class Pipeline:
                 await self.send_text_to_frontend("", "AI", is_stream=False)
                 await self.send_text_to_frontend(llm_response.response, "AI", is_stream=True)
 
-                # Synthesize and speak Gemini's full response as one continuous natural audio stream
+                # Synthesize and speak Gemini's full response
                 if llm_response.response:
                     await self._speak(llm_response.response)
 
@@ -137,8 +135,7 @@ class Pipeline:
         self._is_bot_speaking = True
 
         try:
-            # 10ms frames @ 48kHz (480 samples = 960 bytes) for WebRTC alignment
-            SAMPLES_PER_FRAME = 480  
+            SAMPLES_PER_FRAME = 480  # 10ms at 48kHz
             BYTES_PER_FRAME = SAMPLES_PER_FRAME * 2  # 960 bytes (16-bit mono PCM)
             audio_buffer = b""
 
@@ -169,7 +166,7 @@ class Pipeline:
                     await self.audio_source.capture_frame(frame)
                     frames_pushed += 1
 
-                    # WebRTC native 10ms frame pacing
+                    # WebRTC 10ms frame pacing
                     target_time = playback_start + (frames_pushed * 0.010)
                     sleep_time = target_time - time.time()
                     if sleep_time > 0:

@@ -209,7 +209,7 @@ class GeminiClient:
         )
 
     async def stream_opening_message(self):
-        opening = "Hi there! I'm your AI interviewer today. I'm here to understand how you learn, remember things, and feel about studying. There are no right or wrong answers, just your genuine experience. Ready to begin?"
+        opening = "नमस्ते! मैं आपकी AI interviewer Bodh हूँ। आज हम बात करेंगे कि आप घर पर कैसे study करते हैं, subjects कैसे समझ आते हैं और आपको पढ़ाई में कैसा लगता है। यहाँ कोई सही या गलत answers नहीं हैं। क्या हम शुरू करें?"
         yield opening
 
 
