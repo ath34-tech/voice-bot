@@ -5,9 +5,12 @@ import json
 import websockets
 from websockets.exceptions import ConnectionClosed, ConnectionClosedError
 
+from config import settings
+
 logger = logging.getLogger(__name__)
 
-# Deepgram connection URL — shared between initial connect and reconnect
+# Deepgram connection URL with 3.5s silence threshold (3500ms endpointing)
+_ENDPOINT_MS = getattr(settings, 'DEEPGRAM_STT_ENDPOINTING_MS', '3500')
 _DEEPGRAM_URL = (
     "wss://api.deepgram.com/v1/listen?"
     "model=nova-2&"
@@ -17,7 +20,9 @@ _DEEPGRAM_URL = (
     "channels=1&"
     "sample_rate=48000&"
     "interim_results=true&"
-    "endpointing=3000"   # 3 s silence → finalise sentence
+    f"endpointing={_ENDPOINT_MS}&"
+    f"utterance_end_ms={_ENDPOINT_MS}&"
+    "vad_events=true"
 )
 
 
@@ -34,7 +39,8 @@ class DeepgramSTT:
         self._reconnect_task = None
         self._running = False          # Master flag — False = stop all loops
 
-        self.on_speech_started = None  # Barge-in callback
+        self._utterance_parts = []
+        self.on_speech_started = None  # Barge-in callback: fn(transcript_text)
 
     # ------------------------------------------------------------------ #
     #  Public interface                                                    #
@@ -54,17 +60,12 @@ class DeepgramSTT:
         try:
             await self.connection.send(audio_data)
         except (ConnectionClosed, ConnectionClosedError):
-            # Connection was lost — _receive_loop will trigger reconnect
             pass
         except Exception:
             pass
 
     async def receive_transcript(self) -> str:
-        """
-        Block until the next finalised transcript is available.
-        If the queue stays empty for 25 s and the connection is gone,
-        trigger a reconnect so the pipeline never freezes permanently.
-        """
+        """Block until the next finalised transcript is available."""
         while self._running:
             try:
                 return await asyncio.wait_for(
@@ -77,7 +78,6 @@ class DeepgramSTT:
                 if self.connection is None:
                     logger.warning("⚡ STT queue timeout with no connection — forcing reconnect...")
                     asyncio.create_task(self._reconnect())
-                # else connection is alive, user just hasn't spoken — loop normally
         return ""
 
     async def disconnect(self):
@@ -98,14 +98,12 @@ class DeepgramSTT:
 
     async def _do_connect(self):
         """Open the WebSocket and (re)start the background tasks."""
-        self._cancel_tasks()   # Kill any stale tasks first
+        self._cancel_tasks()
 
         self.connection = await websockets.connect(
             _DEEPGRAM_URL,
             additional_headers={"Authorization": f"Token {self.api_key}"},
-            # Raise the library-level ping timeout so Deepgram's own keepalive
-            # mechanism has time to respond before websockets kills the socket.
-            ping_interval=None,   # We send our own KeepAlive messages
+            ping_interval=None,
             ping_timeout=None,
             close_timeout=5,
         )
@@ -121,16 +119,12 @@ class DeepgramSTT:
         self._keepalive_task = None
 
     async def _reconnect(self):
-        """
-        Exponential-backoff reconnect loop.
-        Called by _receive_loop or _keepalive_loop when the connection drops.
-        """
         if not self._running:
             return
         logger.warning("⚡ Deepgram connection lost — attempting reconnect...")
 
         delay = 1.0
-        for attempt in range(1, 8):   # Up to 7 attempts (~2 min total)
+        for attempt in range(1, 8):
             await asyncio.sleep(delay)
             if not self._running:
                 return
@@ -140,7 +134,7 @@ class DeepgramSTT:
                 return
             except Exception as e:
                 logger.warning(f"Reconnect attempt {attempt} failed: {e}")
-                delay = min(delay * 2, 30)   # 1, 2, 4, 8, 16, 30, 30 …
+                delay = min(delay * 2, 30)
 
         logger.error("❌ Deepgram reconnect failed after all attempts. STT unavailable.")
 
@@ -149,11 +143,6 @@ class DeepgramSTT:
     # ------------------------------------------------------------------ #
 
     async def _keepalive_loop(self):
-        """
-        Send a Deepgram KeepAlive JSON message every 8 seconds.
-        This prevents Deepgram's server from closing an idle connection.
-        (Replaces the websockets library-level ping which Deepgram doesn't support.)
-        """
         try:
             while self._running and self.connection:
                 await asyncio.sleep(8)
@@ -161,9 +150,7 @@ class DeepgramSTT:
                     break
                 try:
                     await self.connection.send(json.dumps({"type": "KeepAlive"}))
-                    logger.debug("Deepgram KeepAlive sent.")
                 except (ConnectionClosed, ConnectionClosedError):
-                    # _receive_loop will handle the reconnect
                     break
                 except Exception as e:
                     logger.warning(f"KeepAlive send failed: {e}")
@@ -172,10 +159,6 @@ class DeepgramSTT:
             pass
 
     async def _receive_loop(self):
-        """
-        Consume messages from Deepgram.
-        On any connection drop, schedule a reconnect and exit cleanly.
-        """
         try:
             async for message in self.connection:
                 if not self._running:
@@ -194,6 +177,14 @@ class DeepgramSTT:
                 if msg_type == "Error":
                     logger.error(f"🚨 Deepgram error message: {message}")
 
+                elif msg_type == "UtteranceEnd":
+                    if self._utterance_parts:
+                        full_text = " ".join(self._utterance_parts).strip()
+                        self._utterance_parts.clear()
+                        if full_text and len(full_text) >= 2:
+                            logger.info(f"Deepgram UtteranceEnd (3.5s silence): {full_text}")
+                            await self.transcript_queue.put(full_text)
+
                 elif msg_type == "Results":
                     channel = data.get("channel", {})
                     alts = channel.get("alternatives", [])
@@ -204,21 +195,28 @@ class DeepgramSTT:
                         continue
 
                     is_final = data.get("is_final", False)
+                    speech_final = data.get("speech_final", False)
 
-                    # Any text at all → user is speaking → trigger barge-in
-                    if not is_final and self.on_speech_started:
-                        self.on_speech_started()
+                    # Trigger barge-in only on actual user speech text
+                    if self.on_speech_started and len(transcript) >= 3:
+                        self.on_speech_started(transcript)
 
                     if is_final:
-                        logger.debug(f"Deepgram final: {transcript}")
-                        await self.transcript_queue.put(transcript)
+                        if transcript not in self._utterance_parts:
+                            self._utterance_parts.append(transcript)
+
+                        if speech_final or data.get("end_of_single_utterance", False):
+                            full_text = " ".join(self._utterance_parts).strip()
+                            self._utterance_parts.clear()
+                            if full_text and len(full_text) >= 2:
+                                logger.info(f"Deepgram speech_final: {full_text}")
+                                await self.transcript_queue.put(full_text)
 
         except asyncio.CancelledError:
             pass
         except (ConnectionClosed, ConnectionClosedError) as e:
             if self._running:
                 logger.error(f"Deepgram connection closed unexpectedly: {e}")
-                # Schedule reconnect without blocking this dying task
                 asyncio.create_task(self._reconnect())
         except Exception as e:
             if self._running:

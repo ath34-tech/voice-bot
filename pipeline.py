@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import time
+import re
 from livekit import rtc
 from stt import DeepgramSTT
 from llm import LLMClient
@@ -25,6 +27,9 @@ class Pipeline:
         self.bot_publication = None
         self._main_task = None
         self._is_interrupted = False
+        self._is_bot_speaking = False
+
+        # Register STT speech started callback
         self.stt.on_speech_started = self._handle_interruption
 
         # Survey Engine State
@@ -32,10 +37,9 @@ class Pipeline:
         self.state_manager = StateManager(self.session_id)
         self.memory_manager = MemoryManager(self.session_id)
 
-    def _handle_interruption(self):
-        if not self._is_interrupted:
-            logger.info("🛑 User interrupted! Stopping bot speech...")
-            self._is_interrupted = True
+    def _handle_interruption(self, text: str = ""):
+        # Ignore mic speaker echo while bot is speaking to prevent self-interruption
+        pass
 
     async def start(self):
         logger.info("Connecting to STT...")
@@ -57,6 +61,9 @@ class Pipeline:
         logger.info("Pipeline stopped.")
 
     async def handle_audio_frame(self, frame: rtc.AudioFrame):
+        # Mute incoming mic feed to STT while bot is actively speaking to prevent echo feedback loops
+        if self._is_bot_speaking:
+            return
         audio_data = bytes(frame.data)
         await self.stt.send_audio(audio_data)
 
@@ -68,39 +75,29 @@ class Pipeline:
                     continue
 
                 clean_transcript = transcript.strip().rstrip(".").strip()
-                if len(clean_transcript.split()) <= 2:
-                    self._is_interrupted = False
+                if not clean_transcript or len(clean_transcript) < 2:
                     continue
 
-                logger.info(f"🎤 User: {transcript}")
+                logger.info(f"🎤 User (Final 3.5s Endpoint): {transcript}")
                 await self.send_text_to_frontend(transcript, "User")
                 
                 # Add to memory
                 turn_id = self.memory_manager.add_student_turn(transcript)
-
-                was_interrupted = self._is_interrupted
-                self._is_interrupted = False
 
                 # Build Context for LLM
                 current_question = self.state_manager.get_current_question()
                 next_q = self.state_manager.questionnaire.get_next_question(current_question.id) if current_question else None
                 prompt = self.memory_manager.build_llm_prompt(self.state_manager.state, current_question, next_q)
 
-                # Call LLM
+                # Call LLM (Gemini / Groq)
                 llm_response = await self.llm.get_conversational_decision(prompt)
                 
                 await self.send_text_to_frontend("", "AI", is_stream=False)
                 await self.send_text_to_frontend(llm_response.response, "AI", is_stream=True)
 
-                # Speak Response (we simulate streaming for simplicity here)
-                sentences = llm_response.response.replace("? ", "?|").replace("! ", "!|").replace(". ", ".|").replace("\n", "\n|").split("|")
-                for sentence in sentences:
-                    clean = sentence.strip()
-                    if clean:
-                        if self._is_interrupted:
-                            logger.info("Cancelling TTS due to interruption.")
-                            break
-                        await self._speak(clean)
+                # Synthesize and speak Gemini's full response as one continuous natural audio stream
+                if llm_response.response:
+                    await self._speak(llm_response.response)
 
                 # Add AI response to memory
                 self.memory_manager.add_ai_turn(llm_response.response)
@@ -117,7 +114,6 @@ class Pipeline:
                 if self.state_manager.state.status == "completed":
                     logger.info("Survey completed. AI session winding down.")
                     await self._speak("Thank you for completing the survey! Have a great day.")
-                    # Let the TTS finish before disconnecting
                     await asyncio.sleep(2.0)
                     await self.stop()
                     await self.room.disconnect()
@@ -133,25 +129,37 @@ class Pipeline:
         self.state_manager.apply_extraction(q_id, extraction_resp, raw_text, turn_id)
 
     async def _speak(self, text: str):
+        if not text or not text.strip():
+            return
+
         logger.info(f"🔊 Bot speaking: {text}")
+        self._is_interrupted = False
+        self._is_bot_speaking = True
+
         try:
-            SAMPLES_PER_FRAME = 960
-            BYTES_PER_FRAME = SAMPLES_PER_FRAME * 2
+            # 10ms frames @ 48kHz (480 samples = 960 bytes) for WebRTC alignment
+            SAMPLES_PER_FRAME = 480  
+            BYTES_PER_FRAME = SAMPLES_PER_FRAME * 2  # 960 bytes (16-bit mono PCM)
             audio_buffer = b""
 
-            import time
-            start_time = time.time()
-            frames_sent = 0
+            playback_start = None
+            frames_pushed = 0
 
             async for chunk in self.tts.stream_synthesize(text):
                 if self._is_interrupted:
-                    logger.info("Cancelling TTS playback due to interruption.")
+                    logger.info("Cancelling TTS stream due to user interruption.")
                     break
 
                 audio_buffer += chunk
+
                 while len(audio_buffer) >= BYTES_PER_FRAME:
                     frame_data = audio_buffer[:BYTES_PER_FRAME]
                     audio_buffer = audio_buffer[BYTES_PER_FRAME:]
+
+                    # Start real-time pacing timer on arrival of the FIRST audio frame
+                    if playback_start is None:
+                        playback_start = time.time()
+
                     frame = rtc.AudioFrame(
                         data=frame_data,
                         sample_rate=self.sample_rate,
@@ -159,25 +167,43 @@ class Pipeline:
                         samples_per_channel=SAMPLES_PER_FRAME
                     )
                     await self.audio_source.capture_frame(frame)
-                    frames_sent += 1
+                    frames_pushed += 1
 
-                    target_time = start_time + (frames_sent * 0.020)
+                    # WebRTC native 10ms frame pacing
+                    target_time = playback_start + (frames_pushed * 0.010)
                     sleep_time = target_time - time.time()
                     if sleep_time > 0:
                         await asyncio.sleep(sleep_time)
 
+            # Pad residual bytes cleanly for the final frame
             if audio_buffer and not self._is_interrupted:
-                audio_buffer += b'\x00' * (BYTES_PER_FRAME - len(audio_buffer) % BYTES_PER_FRAME)
+                if len(audio_buffer) % 2 != 0:
+                    audio_buffer += b'\x00'
+                if len(audio_buffer) < BYTES_PER_FRAME:
+                    audio_buffer += b'\x00' * (BYTES_PER_FRAME - len(audio_buffer))
+
+                if playback_start is None:
+                    playback_start = time.time()
+
+                frame_data = audio_buffer[:BYTES_PER_FRAME]
                 frame = rtc.AudioFrame(
-                    data=audio_buffer[:BYTES_PER_FRAME],
+                    data=frame_data,
                     sample_rate=self.sample_rate,
                     num_channels=self.num_channels,
                     samples_per_channel=SAMPLES_PER_FRAME
                 )
                 await self.audio_source.capture_frame(frame)
+                frames_pushed += 1
+
+                target_time = playback_start + (frames_pushed * 0.010)
+                sleep_time = target_time - time.time()
+                if sleep_time > 0:
+                    await asyncio.sleep(sleep_time)
 
         except Exception as e:
             logger.error(f"TTS error: {e}", exc_info=True)
+        finally:
+            self._is_bot_speaking = False
 
     async def send_text_to_frontend(self, text: str, sender: str, is_stream: bool = False):
         import json
@@ -188,11 +214,14 @@ class Pipeline:
     async def trigger_first_message(self):
         try:
             await self.send_text_to_frontend("", "AI", is_stream=False)
+            full_opening = ""
             async for chunk in self.llm.stream_opening_message():
+                full_opening += chunk
                 await self.send_text_to_frontend(chunk, "AI", is_stream=True)
-                await self._speak(chunk)
-                # Add opening to memory
-                self.memory_manager.add_ai_turn(chunk)
+            
+            if full_opening:
+                await self._speak(full_opening)
+                self.memory_manager.add_ai_turn(full_opening)
 
         except Exception as e:
             logger.error(f"Error during first message: {e}")

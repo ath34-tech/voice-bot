@@ -8,6 +8,8 @@ class LiveKitClient:
     def __init__(self):
         self.room = rtc.Room()
         self.pipeline = None
+        self._audio_stream = None
+        self._audio_task = None
         self._setup_event_listeners()
 
     def _setup_event_listeners(self):
@@ -43,16 +45,20 @@ class LiveKitClient:
                 self._start_audio_stream(track)
 
     def _start_audio_stream(self, track: rtc.RemoteAudioTrack):
-        # We MUST force the AudioStream to resample the audio to 48kHz / 1 channel!
-        # If the browser negotiates a different sample rate, Deepgram will fail to recognize the audio!
-        audio_stream = rtc.AudioStream(track, sample_rate=48000, num_channels=1)
+        # Force AudioStream to resample audio to 48kHz / 1 channel
+        self._audio_stream = rtc.AudioStream(track, sample_rate=48000, num_channels=1)
         
         async def _read_audio():
-            async for event in audio_stream:
-                if self.pipeline:
-                    await self.pipeline.handle_audio_frame(event.frame)
-                    
-        asyncio.create_task(_read_audio())
+            try:
+                async for event in self._audio_stream:
+                    if self.pipeline:
+                        await self.pipeline.handle_audio_frame(event.frame)
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                print(f"Audio stream closed: {e}")
+
+        self._audio_task = asyncio.create_task(_read_audio())
 
     def _create_token(self, room_name: str) -> str:
         return (
@@ -85,6 +91,10 @@ class LiveKitClient:
 
     async def shutdown(self):
         """Cleanly stops the AI pipeline and disconnects the bot from the room."""
+        if self._audio_task and not self._audio_task.done():
+            self._audio_task.cancel()
+        if self._audio_stream:
+            await self._audio_stream.aclose()
         if self.pipeline:
             await self.pipeline.stop()
         await self.room.disconnect()

@@ -21,5 +21,9 @@ class Settings:
     GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
     EXTRACTOR_MODEL = os.getenv("EXTRACTOR_MODEL", "gemini-2.5-flash-lite")
 
+    # STT & TTS Audio Settings
+    DEEPGRAM_STT_ENDPOINTING_MS = os.getenv("DEEPGRAM_STT_ENDPOINTING_MS", "3500")  # 3.5s silence threshold
+    DEEPGRAM_TTS_VOICE = os.getenv("DEEPGRAM_TTS_VOICE", "aura-stella-en")  # Warm, rich, non-robotic female voice
+
 
 settings = Settings()
