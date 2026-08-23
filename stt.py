@@ -173,7 +173,7 @@ class DeepgramSTT:
                         full_text = " ".join(self._utterance_parts).strip()
                         self._utterance_parts.clear()
                         if full_text and len(full_text) >= 2:
-                            logger.info(f"Deepgram UtteranceEnd (3.5s silence): {full_text}")
+                            logger.info(f"🎤 Deepgram UtteranceEnd (3.5s Silence Reached): '{full_text}'")
                             await self.transcript_queue.put(full_text)
 
                 elif msg_type == "Results":
@@ -188,20 +188,16 @@ class DeepgramSTT:
                     is_final = data.get("is_final", False)
                     speech_final = data.get("speech_final", False)
 
-                    # Trigger barge-in only on actual user speech text
+                    # Trigger barge-in notification if bot is speaking
                     if self.on_speech_started and len(transcript) >= 3:
                         self.on_speech_started(transcript)
 
-                    logger.info(f"🎙️ Deepgram STT Realtime: '{transcript}' (is_final={is_final})")
+                    logger.info(f"🎙️ Deepgram STT Stream: '{transcript}' (is_final={is_final}, speech_final={speech_final})")
 
+                    # Accumulate sub-phrases
                     if is_final or speech_final:
                         if transcript not in self._utterance_parts:
                             self._utterance_parts.append(transcript)
-
-                        full_text = " ".join(self._utterance_parts).strip()
-                        self._utterance_parts.clear()
-                        logger.info(f"🎤 Deepgram STT Transcribed: {full_text}")
-                        await self.transcript_queue.put(full_text)
 
         except asyncio.CancelledError:
             pass
