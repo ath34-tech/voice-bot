@@ -24,14 +24,17 @@ class LiveKitClient:
         @self.room.on("participant_connected")
         def on_participant_connected(participant: rtc.RemoteParticipant):
             print(f"Participant joined: {participant.identity}")
+            if self.pipeline and not getattr(self.pipeline, "_has_greeted", False):
+                self.pipeline._has_greeted = True
+                asyncio.create_task(self.pipeline.trigger_first_message())
 
         @self.room.on("participant_disconnected")
         def on_participant_disconnected(participant: rtc.RemoteParticipant):
             print(f"Participant left: {participant.identity}")
-            # Automatically self-destruct the bot if the human leaves the room!
             if len(self.room.remote_participants) == 0:
-                print(f"Room empty. Shutting down bot for room {self.room.name}...")
-                asyncio.create_task(self.shutdown())
+                print(f"Room empty. Resetting bot greeting state for room {self.room.name}...")
+                if self.pipeline:
+                    self.pipeline._has_greeted = False
 
         @self.room.on("track_published")
         def on_track_published(publication: rtc.RemoteTrackPublication, participant: rtc.RemoteParticipant):
@@ -88,6 +91,13 @@ class LiveKitClient:
         )
 
         print(f"Bot successfully connected to {self.room.name}!")
+
+        # Subscribe to any existing remote microphone tracks
+        for participant in self.room.remote_participants.values():
+            for pub in participant.track_publications.values():
+                if pub.track and pub.track.kind == rtc.TrackKind.KIND_AUDIO:
+                    print(f"Subscribing to existing microphone track from {participant.identity}...")
+                    self._start_audio_stream(pub.track)
 
     async def shutdown(self):
         """Cleanly stops the AI pipeline and disconnects the bot from the room."""

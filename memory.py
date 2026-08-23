@@ -1,6 +1,8 @@
 import os
 import json
 from typing import List
+from config import settings
+import database
 from schemas import TranscriptTurn, SurveyState, Question
 
 class MemoryManager:
@@ -31,19 +33,40 @@ class MemoryManager:
         self.save_transcript()
 
     def save_transcript(self):
-        os.makedirs("data", exist_ok=True)
-        file_path = f"data/{self.session_id}_conversation.json"
-        
-        # Pydantic v2 support; fallback to dict() if needed
-        data = []
-        for turn in self.transcript:
-            if hasattr(turn, "model_dump"):
-                data.append(turn.model_dump())
-            else:
-                data.append(turn.dict())
-                
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
+        storage_mode = getattr(settings, 'TRANSCRIPT_STORAGE', 'database').lower()
+
+        # 1. Database Transcript Sync
+        if storage_mode in ('database', 'both'):
+            if self.transcript:
+                latest_turn = self.transcript[-1]
+                try:
+                    import asyncio
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        asyncio.create_task(database.append_transcript_turn_async(
+                            session_id=self.session_id,
+                            sender=latest_turn.speaker,
+                            text=latest_turn.text
+                        ))
+                except Exception:
+                    pass
+
+        # 2. File Transcript Sync
+        if storage_mode in ('file', 'both'):
+            try:
+                os.makedirs("data", exist_ok=True)
+                file_path = f"data/{self.session_id}_conversation.json"
+                data = []
+                for turn in self.transcript:
+                    if hasattr(turn, "model_dump"):
+                        data.append(turn.model_dump())
+                    else:
+                        data.append(turn.dict())
+                        
+                with open(file_path, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2)
+            except Exception as e:
+                pass
 
     def get_recent_turns(self, count: int = 6) -> str:
         recent = self.transcript[-count:] if self.transcript else []
@@ -105,6 +128,7 @@ CRITICAL RULES FOR DECISION & RESPONSE:
 2. ZERO FUMBLES: Speak with total clarity and confidence. No filler words ('um', 'ah', 'well'), no markdown syntax, no lists, and no rigid question numbers.
 {fu_instruction}
 5. "CLARIFY" / "ASK": If the user gave an off-topic or completely unclear answer, use "CLARIFY" to ask a brief clarification about 1. CURRENT QUESTION.
+6. ONE QUESTION ONLY: NEVER ask two questions in a single turn. When choosing "NEXT_QUESTION", acknowledge the student's answer briefly in 2-4 supportive words and ask ONLY the NEXT QUESTION text.
 """
         return prompt
 

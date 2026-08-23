@@ -200,3 +200,20 @@ class Questionnaire:
         except ValueError:
             pass
         return None
+
+    def export_schema_for_frontend(self):
+        return [
+            {
+                "id": q.id,
+                "text": q.text,
+                "type": getattr(q, "type", "free_text"),
+                "options": getattr(q, "options", []) or [],
+                "allow_followup": getattr(q, "allow_followup", True)
+            }
+            for q in self.questions
+        ]
+
+
+def get_questionnaire_for_school(school_code: str = "DEFAULT") -> Questionnaire:
+    return Questionnaire()
+

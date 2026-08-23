@@ -3,9 +3,10 @@ import logging
 import time
 import re
 from livekit import rtc
+from config import settings
 from stt import DeepgramSTT
 from llm import LLMClient
-from tts import DeepgramTTS
+from tts import DeepgramTTS, SarvamTTS
 
 from state import StateManager
 from memory import MemoryManager
@@ -17,7 +18,11 @@ class Pipeline:
         self.room = room
         self.stt = DeepgramSTT()
         self.llm = LLMClient()
-        self.tts = DeepgramTTS()
+
+        if getattr(settings, 'TTS_PROVIDER', 'deepgram').lower() == "sarvam":
+            self.tts = SarvamTTS()
+        else:
+            self.tts = DeepgramTTS()
 
         self.sample_rate = 48000
         self.num_channels = 1
@@ -28,6 +33,7 @@ class Pipeline:
         self._main_task = None
         self._is_interrupted = False
         self._is_bot_speaking = False
+        self._frame_count = 0
 
         # Register STT speech started callback
         self.stt.on_speech_started = self._handle_interruption
@@ -61,7 +67,13 @@ class Pipeline:
         logger.info("Pipeline stopped.")
 
     async def handle_audio_frame(self, frame: rtc.AudioFrame):
-        # Always stream 100% of student microphone audio to STT
+        # Ignore microphone audio while the bot is speaking to prevent speaker echo feedback
+        if self._is_bot_speaking:
+            return
+
+        self._frame_count += 1
+        if self._frame_count % 100 == 1:
+            logger.info(f"🎙️ Streaming student microphone audio to STT (frame {self._frame_count})...")
         audio_data = bytes(frame.data)
         await self.stt.send_audio(audio_data)
 
@@ -163,8 +175,11 @@ class Pipeline:
                         num_channels=self.num_channels,
                         samples_per_channel=SAMPLES_PER_FRAME
                     )
-                    await self.audio_source.capture_frame(frame)
-                    frames_pushed += 1
+                    try:
+                        await self.audio_source.capture_frame(frame)
+                        frames_pushed += 1
+                    except Exception as frame_err:
+                        logger.debug(f"Audio frame capture notice: {frame_err}")
 
                     # WebRTC 10ms frame pacing
                     target_time = playback_start + (frames_pushed * 0.010)
@@ -189,8 +204,11 @@ class Pipeline:
                     num_channels=self.num_channels,
                     samples_per_channel=SAMPLES_PER_FRAME
                 )
-                await self.audio_source.capture_frame(frame)
-                frames_pushed += 1
+                try:
+                    await self.audio_source.capture_frame(frame)
+                    frames_pushed += 1
+                except Exception:
+                    pass
 
                 target_time = playback_start + (frames_pushed * 0.010)
                 sleep_time = target_time - time.time()
@@ -210,9 +228,14 @@ class Pipeline:
 
     async def trigger_first_message(self):
         try:
+            student_name = None
+            if self.state_manager and self.state_manager.state and "A01" in self.state_manager.state.answers:
+                ans = self.state_manager.state.answers["A01"]
+                student_name = getattr(ans, 'normalized_answer', None) or getattr(ans, 'raw_response', None)
+
             await self.send_text_to_frontend("", "AI", is_stream=False)
             full_opening = ""
-            async for chunk in self.llm.stream_opening_message():
+            async for chunk in self.llm.stream_opening_message(student_name=student_name):
                 full_opening += chunk
                 await self.send_text_to_frontend(chunk, "AI", is_stream=True)
             
@@ -221,4 +244,4 @@ class Pipeline:
                 self.memory_manager.add_ai_turn(full_opening)
 
         except Exception as e:
-            logger.error(f"Error during first message: {e}")
+            logger.error(f"Error during first message: {e}", exc_info=True)

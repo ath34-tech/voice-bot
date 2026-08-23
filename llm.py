@@ -208,8 +208,9 @@ class GeminiClient:
             answer=None
         )
 
-    async def stream_opening_message(self):
-        opening = "नमस्ते! मैं आपकी AI interviewer Bodh हूँ। आज हम बात करेंगे कि आप घर पर कैसे study करते हैं, subjects कैसे समझ आते हैं और आपको पढ़ाई में कैसा लगता है। यहाँ कोई सही या गलत answers नहीं हैं। क्या हम शुरू करें?"
+    async def stream_opening_message(self, student_name: str = None):
+        name_str = f" {student_name}" if student_name and student_name.lower() != "student" else ""
+        opening = f"नमस्ते{name_str}! मैं आपकी AI interviewer Bodh हूँ। आज हम आपकी पढ़ाई और subjects के बारे में बात करेंगे। यहाँ कोई सही या गलत answers नहीं हैं। क्या हम शुरू करें?"
         yield opening
 
 

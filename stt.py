@@ -192,16 +192,16 @@ class DeepgramSTT:
                     if self.on_speech_started and len(transcript) >= 3:
                         self.on_speech_started(transcript)
 
+                    logger.info(f"🎙️ Deepgram STT Realtime: '{transcript}' (is_final={is_final})")
+
                     if is_final:
                         if transcript not in self._utterance_parts:
                             self._utterance_parts.append(transcript)
 
-                        if speech_final or data.get("end_of_single_utterance", False):
-                            full_text = " ".join(self._utterance_parts).strip()
-                            self._utterance_parts.clear()
-                            if full_text and len(full_text) >= 2:
-                                logger.info(f"Deepgram speech_final: {full_text}")
-                                await self.transcript_queue.put(full_text)
+                        full_text = " ".join(self._utterance_parts).strip()
+                        self._utterance_parts.clear()
+                        logger.info(f"🎤 Deepgram STT Transcribed: {full_text}")
+                        await self.transcript_queue.put(full_text)
 
         except asyncio.CancelledError:
             pass

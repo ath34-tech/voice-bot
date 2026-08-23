@@ -1,0 +1,89 @@
+import asyncio
+import logging
+from livekit import api
+from config import settings
+from rooms import LiveKitClient
+from pipeline import Pipeline
+import database
+
+logging.basicConfig(level=getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO))
+logger = logging.getLogger("bodh_agent")
+
+
+class MultiRoomAgentManager:
+    """
+    Production Multi-Room Manager:
+    Monitors LiveKit Cloud for active student rooms and spawns an AI Voice Bot for each room automatically!
+    Supports UNLIMITED concurrent students simultaneously.
+    """
+    def __init__(self):
+        self.active_bots = {}
+
+    async def run(self):
+        logger.info(f"🚀 Starting Bodh Multi-Room Agent Worker connected to {settings.LIVEKIT_URL}...")
+        await database.init_db()
+
+        # Convert wss:// or ws:// to https:// or http:// for LiveKit Server REST API
+        api_url = settings.LIVEKIT_URL
+        if api_url.startswith("wss://"):
+            api_url = api_url.replace("wss://", "https://", 1)
+        elif api_url.startswith("ws://"):
+            api_url = api_url.replace("ws://", "http://", 1)
+
+        lk_api = api.LiveKitAPI(
+            api_url,
+            settings.LIVEKIT_API_KEY,
+            settings.LIVEKIT_API_SECRET
+        )
+
+        logger.info("✅ Multi-Room Manager active! Monitoring rooms on LiveKit Cloud...")
+
+        try:
+            while True:
+                try:
+                    res = await lk_api.room.list_rooms(api.ListRoomsRequest())
+                    # Only spawn AI Bot for active rooms with human participants
+                    active_rooms = [r for r in res.rooms if getattr(r, 'num_participants', 0) > 0]
+                    active_room_names = [r.name for r in active_rooms]
+
+                    # 1. Spawn AI Bot for any newly detected active student room
+                    for r_name in active_room_names:
+                        if r_name not in self.active_bots:
+                            logger.info(f"⚡ New student room detected: '{r_name}'! Spawning AI Voice Bot...")
+                            try:
+                                client = LiveKitClient()
+                                client.pipeline = Pipeline(client.room, session_id=r_name)
+                                await client.pipeline.start()
+                                await client.connect(r_name)
+                                await client.pipeline.publish_bot_track()
+                                self.active_bots[r_name] = client
+                                logger.info(f"✅ AI Voice Bot successfully joined room: '{r_name}'")
+                                if not getattr(client.pipeline, "_has_greeted", False):
+                                    client.pipeline._has_greeted = True
+                                    logger.info(f"🔊 Triggering opening greeting for room '{r_name}'...")
+                                    asyncio.create_task(client.pipeline.trigger_first_message())
+                            except Exception as spawn_err:
+                                logger.error(f"Error spawning bot for room '{r_name}': {spawn_err}")
+
+                    # 2. Cleanup AI Bot when room closes
+                    dead_rooms = [r for r in self.active_bots if r not in active_room_names]
+                    for r_name in dead_rooms:
+                        logger.info(f"🧹 Room '{r_name}' ended. Cleaning up AI Bot...")
+                        bot = self.active_bots.pop(r_name, None)
+                        if bot:
+                            await bot.shutdown()
+
+                except Exception as loop_err:
+                    logger.debug(f"Room monitor check notice: {loop_err}")
+
+                await asyncio.sleep(2)
+        finally:
+            await lk_api.aclose()
+
+
+if __name__ == "__main__":
+    manager = MultiRoomAgentManager()
+    try:
+        asyncio.run(manager.run())
+    except KeyboardInterrupt:
+        logger.info("Shutting down Bodh Multi-Room Agent Manager...")
