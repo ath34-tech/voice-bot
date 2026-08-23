@@ -10,6 +10,25 @@ logging.basicConfig(level=getattr(logging, settings.LOG_LEVEL.upper(), logging.I
 logger = logging.getLogger("bodh_agent")
 
 
+async def start_health_server():
+    """Lightweight HTTP health check server for Render Web Service port scanner."""
+    port = int(os.getenv("PORT", "10000"))
+    try:
+        from aiohttp import web
+        async def handle_health(request):
+            return web.Response(text="OK - Bodh Agent Live")
+        app = web.Application()
+        app.router.add_get("/", handle_health)
+        app.router.add_get("/health", handle_health)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, "0.0.0.0", port)
+        await site.start()
+        logger.info(f"Health check HTTP server listening on port {port}")
+    except Exception as e:
+        logger.debug(f"Health server notice: {e}")
+
+
 class MultiRoomAgentManager:
     """
     Production Multi-Room Manager:
@@ -22,6 +41,7 @@ class MultiRoomAgentManager:
     async def run(self):
         logger.info(f"🚀 Starting Bodh Multi-Room Agent Worker connected to {settings.LIVEKIT_URL}...")
         await database.init_db()
+        asyncio.create_task(start_health_server())
 
         # Convert wss:// or ws:// to https:// or http:// for LiveKit Server REST API
         api_url = settings.LIVEKIT_URL
