@@ -13,10 +13,10 @@ logger = logging.getLogger("bodh_agent")
 
 
 async def start_health_server():
-    """Lightweight HTTP health check server for Render Web Service port scanner."""
+    """Lightweight HTTP health check server with auto-heartbeat to keep Render service awake 24/7."""
     port = int(os.getenv("PORT", "10000"))
     try:
-        from aiohttp import web
+        from aiohttp import web, ClientSession
         async def handle_health(request):
             return web.Response(text="OK - Bodh Agent Live")
         app = web.Application()
@@ -27,6 +27,19 @@ async def start_health_server():
         site = web.TCPSite(runner, "0.0.0.0", port)
         await site.start()
         logger.info(f"Health check HTTP server listening on port {port}")
+
+        # Self-ping heartbeat loop every 3 minutes to keep Render Free Tier 100% active
+        async def heartbeat_loop():
+            await asyncio.sleep(15)
+            while True:
+                try:
+                    async with ClientSession() as session:
+                        await session.get(f"http://127.0.0.1:{port}/", timeout=5)
+                except Exception:
+                    pass
+                await asyncio.sleep(180)
+
+        asyncio.create_task(heartbeat_loop())
     except Exception as e:
         logger.debug(f"Health server notice: {e}")
 
