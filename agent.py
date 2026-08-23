@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import os
+import sys
 from livekit import api
 from config import settings
 from rooms import LiveKitClient
