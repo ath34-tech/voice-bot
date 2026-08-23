@@ -64,9 +64,8 @@ class MultiRoomAgentManager:
             while True:
                 try:
                     res = await lk_api.room.list_rooms(api.ListRoomsRequest())
-                    # Only spawn AI Bot for active rooms with human participants
-                    active_rooms = [r for r in res.rooms if getattr(r, 'num_participants', 0) > 0]
-                    active_room_names = [r.name for r in active_rooms]
+                    # Detect any active student survey room (chat-xxxx)
+                    active_room_names = [r.name for r in res.rooms if r.name.startswith("chat-")]
 
                     # 1. Spawn AI Bot for any newly detected active student room
                     for r_name in active_room_names:
