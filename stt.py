@@ -194,7 +194,7 @@ class DeepgramSTT:
 
                     logger.info(f"🎙️ Deepgram STT Realtime: '{transcript}' (is_final={is_final})")
 
-                    if is_final:
+                    if is_final or speech_final:
                         if transcript not in self._utterance_parts:
                             self._utterance_parts.append(transcript)
 
