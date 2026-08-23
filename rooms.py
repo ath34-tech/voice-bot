@@ -39,6 +39,10 @@ class LiveKitClient:
         @self.room.on("track_published")
         def on_track_published(publication: rtc.RemoteTrackPublication, participant: rtc.RemoteParticipant):
             print(f"Track published: {publication.sid} by {participant.identity}")
+            try:
+                publication.set_subscribed(True)
+            except Exception as e:
+                print(f"Notice setting subscription: {e}")
 
         @self.room.on("track_subscribed")
         def on_track_subscribed(track: rtc.Track, publication: rtc.RemoteTrackPublication, participant: rtc.RemoteParticipant):
