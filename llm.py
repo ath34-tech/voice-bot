@@ -121,7 +121,7 @@ class GeminiClient:
 
     async def get_conversational_decision(self, prompt: str) -> ConversationalResponse:
         max_retries = 3
-        models_to_try = [self.interviewer_model_name, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-pro"]
+        models_to_try = [self.interviewer_model_name, "gemini-3.5-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
         unique_models = list(dict.fromkeys([m for m in models_to_try if m]))
 
         for model_name in unique_models:
@@ -166,7 +166,7 @@ class GeminiClient:
 
     async def extract_answer(self, prompt: str) -> ExtractionResponse:
         max_retries = 3
-        models_to_try = [self.extractor_model_name, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-pro"]
+        models_to_try = [self.extractor_model_name, "gemini-3.5-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
         unique_models = list(dict.fromkeys([m for m in models_to_try if m]))
 
         for model_name in unique_models:
