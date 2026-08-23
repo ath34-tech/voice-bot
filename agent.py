@@ -60,8 +60,19 @@ class MultiRoomAgentManager:
 
         logger.info("✅ Multi-Room Manager active! Monitoring rooms on LiveKit Cloud...")
 
-        try:
-            while True:
+        while True:
+            try:
+                api_url = settings.LIVEKIT_URL
+                if api_url.startswith("wss://"):
+                    api_url = api_url.replace("wss://", "https://", 1)
+                elif api_url.startswith("ws://"):
+                    api_url = api_url.replace("ws://", "http://", 1)
+
+                lk_api = api.LiveKitAPI(
+                    api_url,
+                    settings.LIVEKIT_API_KEY,
+                    settings.LIVEKIT_API_SECRET
+                )
                 try:
                     res = await lk_api.room.list_rooms(api.ListRoomsRequest())
                     # Detect any active student survey room (chat-xxxx)
@@ -93,13 +104,13 @@ class MultiRoomAgentManager:
                         bot = self.active_bots.pop(r_name, None)
                         if bot:
                             await bot.shutdown()
+                finally:
+                    await lk_api.aclose()
 
-                except Exception as loop_err:
-                    logger.debug(f"Room monitor check notice: {loop_err}")
+            except Exception as loop_err:
+                logger.error(f"Room monitor loop notice: {loop_err}")
 
-                await asyncio.sleep(2)
-        finally:
-            await lk_api.aclose()
+            await asyncio.sleep(2)
 
 
 if __name__ == "__main__":
