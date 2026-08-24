@@ -50,6 +50,10 @@ class LiveKitClient:
             if track.kind == rtc.TrackKind.KIND_AUDIO:
                 print("Subscribed to remote microphone track.")
                 self._start_audio_stream(track)
+                if self.pipeline and not getattr(self.pipeline, "_has_greeted", False):
+                    self.pipeline._has_greeted = True
+                    print(f"🔊 Microphone track subscribed! Triggering opening greeting...")
+                    asyncio.create_task(self.pipeline.trigger_first_message())
 
     def _start_audio_stream(self, track: rtc.RemoteAudioTrack):
         # Force AudioStream to resample audio to 48kHz / 1 channel

@@ -103,9 +103,10 @@ class MultiRoomAgentManager:
                                 await client.pipeline.publish_bot_track()
                                 self.active_bots[r_name] = client
                                 logger.info(f"✅ AI Voice Bot successfully joined room: '{r_name}'")
-                                if not getattr(client.pipeline, "_has_greeted", False):
+                                # Trigger greeting if student is already in the room
+                                if len(client.room.remote_participants) > 0 and not getattr(client.pipeline, "_has_greeted", False):
                                     client.pipeline._has_greeted = True
-                                    logger.info(f"🔊 Triggering opening greeting for room '{r_name}'...")
+                                    logger.info(f"🔊 Student present! Triggering opening greeting for room '{r_name}'...")
                                     asyncio.create_task(client.pipeline.trigger_first_message())
                             except Exception as spawn_err:
                                 logger.error(f"Error spawning bot for room '{r_name}': {spawn_err}")
