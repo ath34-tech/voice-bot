@@ -30,6 +30,21 @@ _DEEPGRAM_URL = (
 )
 
 
+CONTINUATION_WORDS = {
+    "and", "because", "so", "but", "like", "or", "also", "then",
+    "और", "क्योंकि", "तो", "लेकिन", "या", "मतलब", "कि", "जैसे"
+}
+
+def is_incomplete_sentence(text: str) -> bool:
+    if not text:
+        return False
+    words = text.strip().lower().split()
+    if not words:
+        return False
+    last_word = words[-1].strip(".,?!;")
+    return last_word in CONTINUATION_WORDS
+
+
 class DeepgramSTT:
     def __init__(self):
         self.api_key = os.getenv("DEEPGRAM_API_KEY")
@@ -173,7 +188,7 @@ class DeepgramSTT:
                         full_text = " ".join(self._utterance_parts).strip()
                         self._utterance_parts.clear()
                         if full_text and len(full_text) >= 2:
-                            logger.info(f"🎤 Deepgram UtteranceEnd (3.5s Silence Reached): '{full_text}'")
+                            logger.info(f"🎤 Deepgram UtteranceEnd (2.0s Silence): '{full_text}'")
                             await self.transcript_queue.put(full_text)
 
                 elif msg_type == "Results":
@@ -194,10 +209,19 @@ class DeepgramSTT:
 
                     logger.info(f"🎙️ Deepgram STT Stream: '{transcript}' (is_final={is_final}, speech_final={speech_final})")
 
-                    # Accumulate sub-phrases
                     if is_final or speech_final:
                         if transcript not in self._utterance_parts:
                             self._utterance_parts.append(transcript)
+
+                        full_text = " ".join(self._utterance_parts).strip()
+
+                        # Smart Intention Check: If the sentence ends on an incomplete continuation word, wait!
+                        if is_incomplete_sentence(full_text) and not speech_final:
+                            logger.info(f"⏳ Incomplete sentence detected ('{full_text}'). Waiting for user to complete thought...")
+                        else:
+                            self._utterance_parts.clear()
+                            logger.info(f"🎤 Deepgram STT Finalized: '{full_text}'")
+                            await self.transcript_queue.put(full_text)
 
         except asyncio.CancelledError:
             pass

@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     TTS_PROVIDER: str = "deepgram"
 
     # Deepgram Settings
-    DEEPGRAM_STT_ENDPOINTING_MS: str = "3500"
+    DEEPGRAM_STT_ENDPOINTING_MS: str = "2000"
     DEEPGRAM_STT_LANGUAGE: str = "hi"
     DEEPGRAM_TTS_VOICE: str = "aura-stella-en"
 
