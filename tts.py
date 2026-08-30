@@ -103,8 +103,8 @@ class SarvamTTS:
                     else:
                         raw_pcm = audio_bytes
 
-                    # Chunk raw PCM in 1920-byte frames (20ms @ 48kHz)
-                    chunk_size = 1920
+                    # Chunk raw PCM in 960-byte frames (10ms @ 48kHz mono PCM for smooth WebRTC playback)
+                    chunk_size = 960
                     for i in range(0, len(raw_pcm), chunk_size):
                         yield raw_pcm[i:i + chunk_size]
         except Exception as e:

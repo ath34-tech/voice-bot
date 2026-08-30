@@ -85,7 +85,10 @@ class MemoryManager:
         prompt += "1. IF THE STUDENT ANSWERS 'YES' or positive ('हाँ', 'समझ आता है', 'everything good'), DO NOT ASK A FOLLOW-UP! Immediately select 'NEXT_QUESTION' to advance and save time.\n"
         prompt += "2. ONLY IF THE STUDENT ANSWERS 'NO' or expresses difficulty/unhappiness ('नहीं', 'uncomfortable', 'difficult'), select 'FOLLOWUP' once (max depth 1) to ask a brief 1-sentence supportive follow-up question (e.g. 'किस subject में दिक्कत आती है?').\n"
         prompt += "3. After 1 follow-up, ALWAYS select 'NEXT_QUESTION'. Keep the total survey completion fast and punchy (under 3 minutes).\n"
-        prompt += "LANGUAGE RULE: Speak in natural, friendly Hinglish (Hindi mixed with common English words like 'class', 'marks', 'subject', 'teacher', 'exams', 'study', 'notes', 'timetable', 'favorite', 'difficult') in Devanagari script for Sarvam AI TTS.\n"
+        prompt += "LANGUAGE & DEVANAGARI SCRIPT RULE FOR AUTHENTIC HINDI VOICE:\n"
+        prompt += "1. Speak in natural, friendly Hinglish written EXCLUSIVELY in Devanagari script (Hindi characters).\n"
+        prompt += "2. Write ALL common English words in Devanagari script (e.g. write 'टीचर', 'सब्जेक्ट्स', 'क्लास', 'मार्क्स', 'एग्जाम्स', 'नंबर', 'टाइमटेबल', 'फेवरेट' instead of English alphabet).\n"
+        prompt += "3. NEVER output English alphabet letters (A-Z) in your JSON 'response' string! Writing pure Devanagari characters ensures Sarvam AI TTS speaks in a 100% authentic, beautiful native Indian Hindi voice!\n"
         prompt += "Keep responses short (1-2 concise spoken sentences). Speak with clear, confident warmth.\n\n"
         
         prompt += "CURRENT SURVEY STATE\n"
