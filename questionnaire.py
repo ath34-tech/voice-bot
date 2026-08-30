@@ -31,28 +31,31 @@ QUESTIONS: List[Question] = [
     # ==========================================
     Question(
         id="SC01",
-        text="क्या आपको class में teacher के पढ़ाए हुए topics समझ में आते हैं? (Do you usually understand the topics taught by your teacher in class?)",
+        text="क्या आपको class में teacher के पढ़ाए हुए topics आसानी से समझ में आते हैं? (बस 'हाँ' या 'नहीं' में जवाब दें)",
         type="single_choice",
         options=["Yes", "No"],
         allow_followup=True,
+        max_followups=1,
     ),
     Question(
         id="SC02",
-        text="क्या आपके teachers subjects को simple और clear तरीक़े से समझाते हैं? (Do your teachers explain subjects in a simple and clear way?)",
+        text="क्या आपके teachers subjects को simple और clear तरीक़े से समझाते हैं? (हाँ, नहीं या कभी-कभी में जवाब दें)",
         type="single_choice",
         options=["Yes", "No", "Sometimes"],
         allow_followup=True,
+        max_followups=1,
     ),
     Question(
         id="SC03",
-        text="Class में अपने teacher से questions पूछने में आप कितना comfortable महसूस करते हो? (How comfortable do you feel asking questions to your teacher in class?)",
+        text="Class में अपने teacher से questions पूछने में आप कितना comfortable महसूस करते हो? (Comfortable या Uncomfortable)",
         type="single_choice",
         options=["Comfortable", "Uncomfortable"],
         allow_followup=True,
+        max_followups=1,
     ),
     Question(
         id="SC04",
-        text="Subjects को समझने और याद रखने में आपको सबसे ज्यादा किस चीज़ से help मिलती है? (Which things help you understand and remember a topic the most?)",
+        text="Subjects को समझने और याद रखने में आपको सबसे ज्यादा किस चीज़ से help मिलती है?",
         type="multi_choice",
         options=[
             "Only lectures",
@@ -61,10 +64,11 @@ QUESTIONS: List[Question] = [
             "Models and practical activities",
         ],
         allow_followup=True,
+        max_followups=1,
     ),
     Question(
         id="SC05",
-        text="अगर आप आज कोई topic पढ़ते हो, तो अगले दिन उसमें से कितना याद रहता है? (If you study a topic today, how much of it do you remember the next day?)",
+        text="अगर आप आज कोई topic पढ़ते हो, तो अगले दिन उसमें से कितना याद रहता है?",
         type="single_choice",
         options=[
             "Almost everything",
@@ -73,12 +77,11 @@ QUESTIONS: List[Question] = [
             "Only a little bit",
             "Almost nothing",
         ],
-        allow_followup=True,
-        max_followups=1,
+        allow_followup=False,
     ),
     Question(
         id="SC06",
-        text="और पूरे एक week के बाद, उस topic का कितना हिस्सा याद रहता है? (And after a whole week, how much of that topic do you still remember?)",
+        text="और पूरे एक week के बाद, उस topic का कितना हिस्सा याद रहता है?",
         type="single_choice",
         options=[
             "Almost everything",
@@ -87,15 +90,15 @@ QUESTIONS: List[Question] = [
             "Only a little bit",
             "Almost nothing",
         ],
-        allow_followup=True,
-        max_followups=1,
+        allow_followup=False,
     ),
     Question(
         id="SC07",
-        text="क्या आपको definitions या formulas याद रखने में difficulty होती है? (Do you find it difficult to remember definitions or formulas?)",
+        text="क्या आपको definitions या formulas याद रखने में difficulty होती है? (बस 'हाँ' या 'नहीं' में जवाब दें)",
         type="single_choice",
         options=["Yes", "No"],
         allow_followup=True,
+        max_followups=1,
     ),
 
     # ==========================================
@@ -103,29 +106,32 @@ QUESTIONS: List[Question] = [
     # ==========================================
     Question(
         id="LM01",
-        text="किसी topic को memorize या रटना आपको कैसा लगता है? (How does memorizing a subject usually feel to you?)",
+        text="किसी topic को memorize या रटना आपको कैसा लगता है?",
         type="single_choice",
         options=["Easy", "Difficult", "Boring", "Other"],
-        allow_followup=True,
+        allow_followup=False,
     ),
     Question(
         id="LM02",
-        text="जब आप किसी topic को अच्छी तरह समझ लेते हो, तो क्या उसे memorize करना easy हो जाता है? (After you understand a topic properly, does it become easier to remember?)",
+        text="जब आप किसी topic को अच्छी तरह समझ लेते हो, तो क्या उसे memorize करना easy हो जाता है? (बस 'हाँ' या 'नहीं' में बताइए)",
         type="single_choice",
         options=["Yes", "No", "Somewhat"],
         allow_followup=True,
+        max_followups=1,
     ),
     Question(
         id="LM11",
-        text="कौन सा subject आपको याद रखने में सबसे difficult लगता है? (Which subject is the most difficult for you to remember?)",
+        text="कौन सा subject आपको याद रखने में सबसे difficult लगता है?",
         type="free_text",
         allow_followup=True,
+        max_followups=1,
     ),
     Question(
         id="LM12",
-        text="आपका favorite subject कौन सा है? (What is your favorite subject?)",
+        text="आपका favorite subject कौन सा है?",
         type="free_text",
         allow_followup=True,
+        max_followups=1,
     ),
 
     # ==========================================
@@ -133,21 +139,22 @@ QUESTIONS: List[Question] = [
     # ==========================================
     Question(
         id="ES03",
-        text="आप exams के बारे में कैसा महसूस करते हो? (How do you usually feel about exams?)",
+        text="आप exams के बारे में कैसा महसूस करते हो?",
         type="single_choice",
         options=[
             "Seriously लेता हूँ और hard work करता हूँ",
             "Normal बात है हर साल होती है",
             "जो होगा देखा जाएगा",
         ],
-        allow_followup=True,
+        allow_followup=False,
     ),
     Question(
         id="ES05",
-        text="क्या उम्मीद से कम marks मिलने पर आपको अगली बार better करने की motivation मिलती है? (Do lower marks motivate you to do better next time?)",
+        text="क्या उम्मीद से कम marks मिलने पर आपको अगली बार better करने की motivation मिलती है? (बस 'हाँ' या 'नहीं' में जवाब दें)",
         type="single_choice",
         options=["Yes", "No"],
         allow_followup=True,
+        max_followups=1,
     ),
 
     # ==========================================
@@ -155,27 +162,29 @@ QUESTIONS: List[Question] = [
     # ==========================================
     Question(
         id="SP01",
-        text="क्या आपका घर पर study करने का कोई fixed timetable है? (Do you have a fixed timetable for studying at home?)",
+        text="क्या आपका घर पर study करने का कोई fixed timetable है? (बस 'हाँ' या 'नहीं' में बताइए)",
         type="single_choice",
         options=["Yes", "No", "Sometimes"],
-        allow_followup=False,
+        allow_followup=True,
+        max_followups=1,
     ),
     Question(
         id="SP02",
-        text="घर पर study करने का आपका तरीक़ा क्या है? (What is your usual way of studying at home?)",
+        text="घर पर study करने का आपका तरीक़ा क्या है?",
         type="single_choice",
         options=[
             "Continuously लंबे समय तक",
             "Short sessions में breaks लेकर",
         ],
-        allow_followup=True,
+        allow_followup=False,
     ),
     Question(
         id="SP08",
-        text="अगर आपको एक ऐसी memory technique सिखाई जाए जिससे subjects को memorize करना और याद रखना easy हो जाए, तो क्या आप उसे सीखना चाहोगे? (Would you like to learn memory techniques?)",
+        text="अगर आपको memory techniques सिखाई जाएं, तो क्या आप सीखना चाहोगे? (बस 'हाँ' या 'नहीं' में जवाब दें)",
         type="single_choice",
         options=["Yes", "No"],
         allow_followup=True,
+        max_followups=1,
     ),
 ]
 

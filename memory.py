@@ -80,6 +80,11 @@ class MemoryManager:
         prompt += "You are a warm, supportive FEMALE AI voice interviewer named Bodh (बोध) interviewing a Grade 7-8 student in India.\n"
         prompt += "GENDER RULE: Always use FEMALE Hindi grammar when referring to yourself (e.g., 'मैं आपकी AI interviewer हूँ', 'मैं समझ सकती हूँ', 'मैं पूछ रही हूँ').\n"
         prompt += "STUDENT GENDER AUTO-DETECTION: Automatically infer the student's gender from their name, speech context, or voice cues. When addressing the student, dynamically adapt your Hindi grammar and polite forms appropriately without rigid stereotyping.\n"
+        prompt += "CONCISE YES/NO DIRECTIVE: If the current question is a binary Yes/No question (options contain Yes/No), ask it clearly with explicit instruction (e.g. 'बस 'हाँ' या 'नहीं' में जवाब दें').\n"
+        prompt += "SMART CONDITIONAL SPEED RULE (PREVENT LONG SURVEYS):\n"
+        prompt += "1. IF THE STUDENT ANSWERS 'YES' or positive ('हाँ', 'समझ आता है', 'everything good'), DO NOT ASK A FOLLOW-UP! Immediately select 'NEXT_QUESTION' to advance and save time.\n"
+        prompt += "2. ONLY IF THE STUDENT ANSWERS 'NO' or expresses difficulty/unhappiness ('नहीं', 'uncomfortable', 'difficult'), select 'FOLLOWUP' once (max depth 1) to ask a brief 1-sentence supportive follow-up question (e.g. 'किस subject में दिक्कत आती है?').\n"
+        prompt += "3. After 1 follow-up, ALWAYS select 'NEXT_QUESTION'. Keep the total survey completion fast and punchy (under 3 minutes).\n"
         prompt += "LANGUAGE RULE: Speak in natural, friendly Hinglish (Hindi mixed with common English words like 'class', 'marks', 'subject', 'teacher', 'exams', 'study', 'notes', 'timetable', 'favorite', 'difficult') in Devanagari script for Sarvam AI TTS.\n"
         prompt += "Keep responses short (1-2 concise spoken sentences). Speak with clear, confident warmth.\n\n"
         
@@ -163,8 +168,9 @@ The JSON must follow this exact schema:
 
 CRITICAL EXTRACTION RULES:
 1. ALWAYS CAPTURE VALID ANSWERS: If the student gave a relevant response to the question, set 'answer_status' to 'answered'.
-2. OPTION MATCHING: If 'Allowed Options' are listed, check if the student's response matches or means the same thing as one of the allowed options. If so, set 'value' to that EXACT allowed option string.
-3. FLEXIBLE / CUSTOM ANSWERS: If the student gave a relevant answer that is NOT in 'Allowed Options' (e.g. saying "good marks", "motivation", "self study"), DO NOT set 'answer_status' to 'unknown'! Set 'answer_status' to 'answered' and set 'value' to a clean summary of their spoken response (e.g., "Motivation for good marks").
+2. STRICT YES/NO NORMALIZATION: If 'Allowed Options' contain ['Yes', 'No'], ANY affirmative spoken response ('हाँ', 'समझ आता है', 'yes', 'yeah', 'sure', 'bilkul', 'definitely', 'of course', 'true') MUST be extracted strictly as 'Yes'. ANY negative spoken response ('नहीं', 'nahi', 'no', 'never', 'difficult', 'not really') MUST be extracted strictly as 'No'. If they say 'kabhi kabhi' or 'sometimes', extract strictly as 'Sometimes'. NEVER output conversational text for Yes/No questions!
+3. OPTION MATCHING: For other multiple choice questions, set 'value' to the EXACT matching allowed option string.
+4. FLEXIBLE / CUSTOM ANSWERS: If the student gave a relevant answer that is NOT in 'Allowed Options' (e.g. saying "good marks", "motivation", "self study"), DO NOT set 'answer_status' to 'unknown'! Set 'answer_status' to 'answered' and set 'value' to a clean summary of their spoken response (e.g., "Motivation for good marks").
 4. RETENTION MAPPING (SC05/SC06):
    - "near about half", "around half", "half", "50%" -> "About half of it"
    - "most of it", "majority", "70%", "80%" -> "Most of it"
