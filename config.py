@@ -38,7 +38,7 @@ class Settings(BaseSettings):
 
     # Audio Provider Options: 'deepgram' | 'sarvam'
     STT_PROVIDER: str = "deepgram"
-    TTS_PROVIDER: str = "deepgram"
+    TTS_PROVIDER: str = "sarvam"
 
     # Deepgram Settings
     DEEPGRAM_STT_ENDPOINTING_MS: str = "2000"
@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     # Sarvam AI Settings
     SARVAM_STT_MODEL: str = "saarika:v2"
     SARVAM_STT_LANGUAGE: str = "hi-IN"
-    SARVAM_TTS_MODEL: str = "bulbul:v2"
+    SARVAM_TTS_MODEL: str = "bulbul:v3"
     SARVAM_TTS_SPEAKER: str = "anushka"
     SARVAM_TTS_LANGUAGE: str = "hi-IN"
 
