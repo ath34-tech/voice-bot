@@ -19,12 +19,13 @@ class Pipeline:
         self.stt = DeepgramSTT()
         self.llm = LLMClient()
 
-        if getattr(settings, 'TTS_PROVIDER', 'deepgram').lower() == "sarvam":
-            self.tts = SarvamTTS()
+        if getattr(settings, 'TTS_PROVIDER', 'sarvam').lower() == "sarvam":
+            self.sample_rate = 24000
+            self.tts = SarvamTTS(sample_rate=self.sample_rate)
         else:
-            self.tts = DeepgramTTS()
+            self.sample_rate = 48000
+            self.tts = DeepgramTTS(sample_rate=self.sample_rate)
 
-        self.sample_rate = 48000
         self.num_channels = 1
         self.audio_source = rtc.AudioSource(self.sample_rate, self.num_channels)
         self.audio_track = rtc.LocalAudioTrack.create_audio_track("bot-audio", self.audio_source)
@@ -147,8 +148,8 @@ class Pipeline:
         self._is_bot_speaking = True
 
         try:
-            SAMPLES_PER_FRAME = 480  # 10ms at 48kHz
-            BYTES_PER_FRAME = SAMPLES_PER_FRAME * 2  # 960 bytes (16-bit mono PCM)
+            SAMPLES_PER_FRAME = int(self.sample_rate * 0.010)  # 240 samples for 24kHz, 480 for 48kHz
+            BYTES_PER_FRAME = SAMPLES_PER_FRAME * 2             # 480 bytes for 24kHz, 960 bytes for 48kHz
             audio_buffer = b""
 
             playback_start = None

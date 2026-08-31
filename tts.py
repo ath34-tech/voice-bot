@@ -8,19 +8,20 @@ logger = logging.getLogger(__name__)
 
 
 class DeepgramTTSImpl:
-    def __init__(self):
+    def __init__(self, sample_rate: int = 24000):
+        self.sample_rate = sample_rate
         self.api_key = os.getenv("DEEPGRAM_API_KEY")
         if not self.api_key:
             raise ValueError("DEEPGRAM_API_KEY is not set.")
 
     async def stream_synthesize(self, text: str):
         """
-        Streams text to PCM 16-bit 48kHz audio using Deepgram Aura.
+        Streams text to PCM 16-bit audio matching exact pipeline sample_rate.
         """
-        logger.info(f"Synthesizing Deepgram TTS: {text[:50]}...")
+        logger.info(f"Synthesizing Deepgram TTS ({self.sample_rate}Hz): {text[:50]}...")
         
         voice_model = getattr(settings, 'DEEPGRAM_TTS_VOICE', 'aura-stella-en')
-        url = f"https://api.deepgram.com/v1/speak?model={voice_model}&encoding=linear16&sample_rate=48000&container=none"
+        url = f"https://api.deepgram.com/v1/speak?model={voice_model}&encoding=linear16&sample_rate={self.sample_rate}&container=none"
         headers = {
             "Authorization": f"Token {self.api_key}",
             "Content-Type": "application/json"
@@ -33,13 +34,15 @@ class DeepgramTTSImpl:
                     error_text = await response.text()
                     raise RuntimeError(f"Deepgram TTS Error: {response.status} - {error_text}")
                 
-                async for chunk in response.content.iter_any():
+                chunk_size = int(self.sample_rate * 0.010 * 2)
+                async for chunk in response.content.iter_chunked(chunk_size):
                     if chunk:
                         yield chunk
 
 
 class SarvamTTS:
-    def __init__(self):
+    def __init__(self, sample_rate: int = 24000):
+        self.sample_rate = sample_rate
         self.api_key = getattr(settings, 'SARVAM_API_KEY', None) or os.getenv("SARVAM_API_KEY")
         self.model = getattr(settings, 'SARVAM_TTS_MODEL', 'bulbul:v3')
         self.speaker = getattr(settings, 'SARVAM_TTS_SPEAKER', 'anushka')
@@ -47,20 +50,22 @@ class SarvamTTS:
         self.fallback = None
         
         if not self.api_key:
-            logger.warning("⚠️ SARVAM_API_KEY is missing! Falling back to Deepgram TTS.")
-            self.fallback = DeepgramTTSImpl()
+            logger.error("🚨 SARVAM_API_KEY IS MISSING! Please add SARVAM_API_KEY to Render Environment Variables for native Hindi voice!")
+            self.fallback = DeepgramTTSImpl(sample_rate=self.sample_rate)
+        else:
+            logger.info(f"🔑 SARVAM_API_KEY active. Using Sarvam AI ({self.model}, speaker={self.speaker}, rate={self.sample_rate}Hz).")
 
     async def stream_synthesize(self, text: str):
         """
         Synthesizes text using Sarvam AI Bulbul TTS model for Hindi/Hinglish.
-        Decodes base64 audio into 16-bit 48kHz PCM chunks for WebRTC streaming.
+        Decodes base64 audio into 16-bit PCM chunks for WebRTC streaming.
         """
         if self.fallback:
             async for chunk in self.fallback.stream_synthesize(text):
                 yield chunk
             return
 
-        logger.info(f"🔊 Synthesizing Sarvam TTS ({self.target_language}, speaker={self.speaker}): '{text[:60]}...'")
+        logger.info(f"🔊 Synthesizing Sarvam TTS ({self.target_language}, speaker={self.speaker}, rate={self.sample_rate}Hz): '{text[:60]}...'")
         
         url = "https://api.sarvam.ai/text-to-speech"
         headers = {
@@ -74,7 +79,7 @@ class SarvamTTS:
             "pitch": 0,
             "pace": 1.0,
             "loudness": 1.5,
-            "speech_sample_rate": 48000,
+            "speech_sample_rate": self.sample_rate,
             "enable_preprocessing": True,
             "model": self.model
         }
@@ -103,13 +108,13 @@ class SarvamTTS:
                     else:
                         raw_pcm = audio_bytes
 
-                    # Chunk raw PCM in 960-byte frames (10ms @ 48kHz mono PCM for smooth WebRTC playback)
-                    chunk_size = 960
+                    # Calculate exact 10ms PCM frame size matching sample_rate
+                    chunk_size = int(self.sample_rate * 0.010 * 2)
                     for i in range(0, len(raw_pcm), chunk_size):
                         yield raw_pcm[i:i + chunk_size]
         except Exception as e:
             logger.error(f"Sarvam TTS synthesis failed: {e}. Falling back to Deepgram TTS...")
-            fallback_tts = DeepgramTTSImpl()
+            fallback_tts = DeepgramTTSImpl(sample_rate=self.sample_rate)
             async for chunk in fallback_tts.stream_synthesize(text):
                 yield chunk
 
