@@ -46,25 +46,20 @@ class SarvamTTS:
         self.api_key = getattr(settings, 'SARVAM_API_KEY', None) or os.getenv("SARVAM_API_KEY")
         model_name = getattr(settings, 'SARVAM_TTS_MODEL', 'bulbul:v3')
         if model_name in ('bulbul:v2', 'v2', 'bulbul-v2'):
-            logger.warning("⚠️ Deprecated Sarvam model 'bulbul:v2' detected. Auto-upgrading to 'bulbul:v3'.")
             model_name = 'bulbul:v3'
         self.model = model_name
         self.speaker = getattr(settings, 'SARVAM_TTS_SPEAKER', 'anushka')
         self.target_language = getattr(settings, 'SARVAM_TTS_LANGUAGE', 'hi-IN')
-        self.fallback = None
-        
-        if not self.api_key:
-            logger.error("🚨 SARVAM_API_KEY IS MISSING! Please add SARVAM_API_KEY to Render Environment Variables for native Hindi voice!")
-            self.fallback = DeepgramTTSImpl(sample_rate=self.sample_rate)
-        else:
-            logger.info(f"🔑 SARVAM_API_KEY active. Using Sarvam AI ({self.model}, speaker={self.speaker}, rate={self.sample_rate}Hz).")
+        self.fallback = DeepgramTTSImpl(sample_rate=self.sample_rate)
 
     async def stream_synthesize(self, text: str):
         """
         Synthesizes text using Sarvam AI Bulbul TTS model for Hindi/Hinglish.
         Decodes base64 audio into 16-bit PCM chunks for WebRTC streaming.
+        Falls back to Deepgram if Sarvam API key is missing or encounters HTTP error.
         """
-        if self.fallback:
+        if not self.api_key:
+            logger.info("ℹ️ SARVAM_API_KEY not set — using Deepgram TTS for instant speech...")
             async for chunk in self.fallback.stream_synthesize(text):
                 yield chunk
             return
@@ -93,13 +88,17 @@ class SarvamTTS:
                 async with session.post(url, headers=headers, json=payload) as response:
                     if response.status != 200:
                         error_text = await response.text()
-                        logger.error(f"Sarvam TTS HTTP {response.status}: {error_text}")
-                        raise RuntimeError(f"Sarvam TTS Error: {response.status} - {error_text}")
+                        logger.error(f"Sarvam TTS HTTP {response.status}: {error_text}. Falling back to Deepgram...")
+                        async for chunk in self.fallback.stream_synthesize(text):
+                            yield chunk
+                        return
                     
                     data = await response.json()
                     audios = data.get("audios", [])
                     if not audios:
-                        logger.error("Sarvam TTS returned empty audio list.")
+                        logger.error("Sarvam TTS returned empty audio list. Falling back to Deepgram...")
+                        async for chunk in self.fallback.stream_synthesize(text):
+                            yield chunk
                         return
 
                     # Sarvam returns base64 encoded audio string
@@ -117,8 +116,9 @@ class SarvamTTS:
                     for i in range(0, len(raw_pcm), chunk_size):
                         yield raw_pcm[i:i + chunk_size]
         except Exception as e:
-            logger.error(f"🚨 Sarvam TTS synthesis error: {e}")
-            raise RuntimeError(f"Sarvam TTS Error: {e}")
+            logger.error(f"Sarvam TTS failed: {e}. Falling back to Deepgram...")
+            async for chunk in self.fallback.stream_synthesize(text):
+                yield chunk
 
 
 # Select DeepgramTTS or SarvamTTS based on TTS_PROVIDER ('deepgram' | 'sarvam')
