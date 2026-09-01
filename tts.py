@@ -102,13 +102,16 @@ class SarvamTTS:
                     base64_audio = audios[0]
                     audio_bytes = base64.b64decode(base64_audio)
 
-                    # Skip WAV header (44 bytes) if WAV container header is present
-                    if audio_bytes.startswith(b'RIFF'):
+                    # Extract raw 16-bit PCM samples cleanly by finding the 'data' subchunk
+                    if b'data' in audio_bytes[:200]:
+                        data_idx = audio_bytes.find(b'data')
+                        raw_pcm = audio_bytes[data_idx + 8:]
+                    elif audio_bytes.startswith(b'RIFF'):
                         raw_pcm = audio_bytes[44:]
                     else:
                         raw_pcm = audio_bytes
 
-                    # Calculate exact 10ms PCM frame size matching sample_rate
+                    # Calculate exact 10ms PCM frame size matching sample_rate (e.g. 480 bytes @ 24kHz mono PCM)
                     chunk_size = int(self.sample_rate * 0.010 * 2)
                     for i in range(0, len(raw_pcm), chunk_size):
                         yield raw_pcm[i:i + chunk_size]
