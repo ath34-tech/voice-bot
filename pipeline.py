@@ -201,24 +201,6 @@ class Pipeline:
                 except Exception:
                     pass
 
-                frame_data = audio_buffer[:BYTES_PER_FRAME]
-                frame = rtc.AudioFrame(
-                    data=frame_data,
-                    sample_rate=self.sample_rate,
-                    num_channels=self.num_channels,
-                    samples_per_channel=SAMPLES_PER_FRAME
-                )
-                try:
-                    await self.audio_source.capture_frame(frame)
-                    frames_pushed += 1
-                except Exception:
-                    pass
-
-                target_time = playback_start + (frames_pushed * 0.010)
-                sleep_time = target_time - time.time()
-                if sleep_time > 0:
-                    await asyncio.sleep(sleep_time)
-
         except Exception as e:
             logger.error(f"TTS error: {e}", exc_info=True)
         finally:
