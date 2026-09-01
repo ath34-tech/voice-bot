@@ -44,7 +44,11 @@ class SarvamTTS:
     def __init__(self, sample_rate: int = 24000):
         self.sample_rate = sample_rate
         self.api_key = getattr(settings, 'SARVAM_API_KEY', None) or os.getenv("SARVAM_API_KEY")
-        self.model = getattr(settings, 'SARVAM_TTS_MODEL', 'bulbul:v3')
+        model_name = getattr(settings, 'SARVAM_TTS_MODEL', 'bulbul:v3')
+        if model_name in ('bulbul:v2', 'v2', 'bulbul-v2'):
+            logger.warning("⚠️ Deprecated Sarvam model 'bulbul:v2' detected. Auto-upgrading to 'bulbul:v3'.")
+            model_name = 'bulbul:v3'
+        self.model = model_name
         self.speaker = getattr(settings, 'SARVAM_TTS_SPEAKER', 'anushka')
         self.target_language = getattr(settings, 'SARVAM_TTS_LANGUAGE', 'hi-IN')
         self.fallback = None
