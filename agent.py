@@ -88,8 +88,8 @@ class MultiRoomAgentManager:
                 )
                 try:
                     res = await lk_api.room.list_rooms(api.ListRoomsRequest())
-                    # Detect any active student survey room (chat-xxxx)
-                    active_room_names = [r.name for r in res.rooms if r.name.startswith("chat-")]
+                    # Detect any active student survey room
+                    active_room_names = [r.name for r in res.rooms if r.name and not r.name.startswith("system-")]
 
                     # 1. Spawn AI Bot for any newly detected active student room
                     for r_name in active_room_names:
