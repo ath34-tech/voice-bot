@@ -1,5 +1,6 @@
 # Workspace Archive & Non-Backend Assets
-# _workspace_archive/
+_workspace_archive/
+PWA_APP/
 organize_workspace.py
 organize.cmd
 frontendapp/
