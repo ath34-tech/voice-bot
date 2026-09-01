@@ -72,9 +72,7 @@ class SarvamTTS:
             "inputs": [text],
             "target_language_code": self.target_language,
             "speaker": self.speaker,
-            "pitch": 0,
             "pace": 1.0,
-            "loudness": 1.5,
             "speech_sample_rate": self.sample_rate,
             "enable_preprocessing": True,
             "model": self.model
