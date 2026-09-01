@@ -148,11 +148,11 @@ class Pipeline:
         self._is_bot_speaking = True
 
         try:
-            SAMPLES_PER_FRAME = int(self.sample_rate * 0.010)  # 240 samples for 24kHz, 480 for 48kHz
-            BYTES_PER_FRAME = SAMPLES_PER_FRAME * 2             # 480 bytes for 24kHz, 960 bytes for 48kHz
+            SAMPLES_PER_FRAME = int(self.sample_rate * 0.020)  # 480 samples = 20ms frame @ 24kHz mono
+            BYTES_PER_FRAME = SAMPLES_PER_FRAME * 2             # 960 bytes per 20ms frame
             audio_buffer = b""
 
-            playback_start = None
+            start_time = time.time()
             frames_pushed = 0
 
             async for chunk in self.tts.stream_synthesize(text):
@@ -178,8 +178,11 @@ class Pipeline:
                     except Exception as frame_err:
                         logger.debug(f"Audio frame capture notice: {frame_err}")
 
-                    # Smooth 8ms pacing for WebRTC audio queue (prevents buffer underruns & sleep spikes)
-                    await asyncio.sleep(0.008)
+                    # High-precision 20ms WebRTC RTP packet pacing
+                    target_time = start_time + (frames_pushed * 0.020)
+                    sleep_delay = target_time - time.time()
+                    if sleep_delay > 0.002:
+                        await asyncio.sleep(sleep_delay)
 
             # Pad residual bytes cleanly for the final frame
             if audio_buffer and not self._is_interrupted:
