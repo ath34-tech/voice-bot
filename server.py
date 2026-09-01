@@ -33,9 +33,19 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def on_startup():
+    import subprocess
+    import sys
     logger.info("Initializing database connection...")
     await database.init_db()
     logger.info("Bodh API Server started successfully.")
+    
+    # Automatically spawn LiveKit AI Voice Agent background worker
+    logger.info("🚀 Auto-launching LiveKit AI Voice Agent process (agent.py)...")
+    try:
+        subprocess.Popen([sys.executable, "agent.py"])
+        logger.info("✅ LiveKit AI Voice Agent launched successfully!")
+    except Exception as agent_err:
+        logger.error(f"⚠️ Failed to auto-launch agent.py: {agent_err}")
 
 
 class StartCallRequest(BaseModel):
