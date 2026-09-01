@@ -45,7 +45,10 @@ class SarvamTTS:
         self.sample_rate = sample_rate
         self.api_key = getattr(settings, 'SARVAM_API_KEY', None) or os.getenv("SARVAM_API_KEY") or "sk_mabkyq4l_4pJjpwvbCxhY8JuXAQlfmzk5"
         self.model = "bulbul:v3"
-        self.speaker = getattr(settings, 'SARVAM_TTS_SPEAKER', 'anushka')
+        speaker_name = getattr(settings, 'SARVAM_TTS_SPEAKER', 'ritu')
+        if speaker_name == 'anushka':
+            speaker_name = 'ritu'  # Auto-upgrade incompatible v2 speaker to v3 native speaker ritu
+        self.speaker = speaker_name
         self.target_language = getattr(settings, 'SARVAM_TTS_LANGUAGE', 'hi-IN')
         self.fallback = DeepgramTTSImpl(sample_rate=self.sample_rate)
 

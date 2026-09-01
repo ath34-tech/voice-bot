@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     SARVAM_STT_MODEL: str = "saarika:v2"
     SARVAM_STT_LANGUAGE: str = "hi-IN"
     SARVAM_TTS_MODEL: str = "bulbul:v3"
-    SARVAM_TTS_SPEAKER: str = "anushka"
+    SARVAM_TTS_SPEAKER: str = "ritu"
     SARVAM_TTS_LANGUAGE: str = "hi-IN"
 
     model_config = SettingsConfigDict(
