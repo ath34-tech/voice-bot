@@ -32,9 +32,9 @@ class Settings(BaseSettings):
     SARVAM_API_KEY: Optional[str] = "sk_mabkyq4l_4pJjpwvbCxhY8JuXAQlfmzk5"
 
     LLM_PROVIDER: str = "gemini"
-    GEMINI_MODEL: str = "gemini-3.5-flash-lite"
+    GEMINI_MODEL: str = "gemini-3.1-flash-lite"
     GROQ_MODEL: str = "llama-3.1-8b-instant"
-    EXTRACTOR_MODEL: str = "gemini-3.5-flash-lite"
+    EXTRACTOR_MODEL: str = "gemini-3.1-flash-lite"
 
     # Audio Provider Options: 'deepgram' | 'sarvam'
     STT_PROVIDER: str = "deepgram"

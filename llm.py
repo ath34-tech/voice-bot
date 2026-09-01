@@ -101,56 +101,36 @@ class GroqClient:
 
 class GeminiClient:
     def __init__(self):
-        if not settings.GOOGLE_API_KEY:
+        self.api_key = getattr(settings, 'GOOGLE_API_KEY', None) or os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+        if not self.api_key:
             raise ValueError("GOOGLE_API_KEY is not set in environment variables.")
-        self.api_key = settings.GOOGLE_API_KEY
-        self.interviewer_model_name = getattr(settings, 'GEMINI_MODEL', 'gemini-2.5-flash-lite') or 'gemini-2.5-flash-lite'
-        self.extractor_model_name = getattr(settings, 'EXTRACTOR_MODEL', 'gemini-2.5-flash-lite') or 'gemini-2.5-flash-lite'
+        self.interviewer_model_name = getattr(settings, 'GEMINI_MODEL', 'gemini-3.1-flash-lite') or 'gemini-3.1-flash-lite'
+        self.extractor_model_name = getattr(settings, 'EXTRACTOR_MODEL', 'gemini-3.1-flash-lite') or 'gemini-3.1-flash-lite'
         
-        self.use_new_genai = False
-        try:
-            from google import genai
-            self.client = genai.Client(api_key=self.api_key)
-            self.use_new_genai = True
-            logger.info("Initialized google.genai SDK client.")
-        except (ImportError, AttributeError):
-            import google.generativeai as genai
-            genai.configure(api_key=self.api_key)
-            self.genai = genai
-            logger.info("Initialized google.generativeai SDK client.")
+        import google.generativeai as genai
+        genai.configure(api_key=self.api_key)
+        self.genai = genai
+        logger.info("Initialized google.generativeai SDK client.")
 
     async def get_conversational_decision(self, prompt: str) -> ConversationalResponse:
         max_retries = 3
-        models_to_try = [self.interviewer_model_name, "gemini-3.5-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+        models_to_try = [self.interviewer_model_name]
         unique_models = list(dict.fromkeys([m for m in models_to_try if m]))
 
         for model_name in unique_models:
             for attempt in range(max_retries):
                 try:
                     logger.info(f"Calling Gemini ({model_name})...")
-                    if self.use_new_genai:
-                        from google.genai import types
-                        response = await self.client.aio.models.generate_content(
-                            model=model_name,
-                            contents=prompt,
-                            config=types.GenerateContentConfig(
-                                system_instruction="You are a JSON-only AI. Always output valid JSON matching the schema requested.",
-                                response_mime_type="application/json",
-                                temperature=0.3,
-                            ),
-                        )
-                        content = response.text
-                    else:
-                        model = self.genai.GenerativeModel(
-                            model_name=model_name,
-                            system_instruction="You are a JSON-only AI. Always output valid JSON matching the schema requested."
-                        )
-                        config = self.genai.types.GenerationConfig(
-                            response_mime_type="application/json",
-                            temperature=0.3
-                        )
-                        response = await model.generate_content_async(prompt, generation_config=config)
-                        content = response.text
+                    model = self.genai.GenerativeModel(
+                        model_name=model_name,
+                        system_instruction="You are a JSON-only AI. Always output valid JSON matching the schema requested."
+                    )
+                    config = self.genai.types.GenerationConfig(
+                        response_mime_type="application/json",
+                        temperature=0.3
+                    )
+                    response = await model.generate_content_async(prompt, generation_config=config)
+                    content = response.text
 
                     logger.info(f"Gemini Raw JSON ({model_name}): {content}")
                     data = json.loads(content)
@@ -166,35 +146,22 @@ class GeminiClient:
 
     async def extract_answer(self, prompt: str) -> ExtractionResponse:
         max_retries = 3
-        models_to_try = [self.extractor_model_name, "gemini-3.5-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+        models_to_try = [self.extractor_model_name]
         unique_models = list(dict.fromkeys([m for m in models_to_try if m]))
 
         for model_name in unique_models:
             for attempt in range(max_retries):
                 try:
-                    if self.use_new_genai:
-                        from google.genai import types
-                        response = await self.client.aio.models.generate_content(
-                            model=model_name,
-                            contents=prompt,
-                            config=types.GenerateContentConfig(
-                                system_instruction="You are a JSON-only Data Extractor. Always output valid JSON matching the schema requested.",
-                                response_mime_type="application/json",
-                                temperature=0.0,
-                            ),
-                        )
-                        content = response.text
-                    else:
-                        model = self.genai.GenerativeModel(
-                            model_name=model_name,
-                            system_instruction="You are a JSON-only Data Extractor. Always output valid JSON matching the schema requested."
-                        )
-                        config = self.genai.types.GenerationConfig(
-                            response_mime_type="application/json",
-                            temperature=0.0
-                        )
-                        response = await model.generate_content_async(prompt, generation_config=config)
-                        content = response.text
+                    model = self.genai.GenerativeModel(
+                        model_name=model_name,
+                        system_instruction="You are a JSON-only Data Extractor. Always output valid JSON matching the schema requested."
+                    )
+                    config = self.genai.types.GenerationConfig(
+                        response_mime_type="application/json",
+                        temperature=0.0
+                    )
+                    response = await model.generate_content_async(prompt, generation_config=config)
+                    content = response.text
 
                     logger.info(f"Extractor Gemini JSON ({model_name}): {content}")
                     data = json.loads(content)
@@ -210,7 +177,7 @@ class GeminiClient:
 
     async def stream_opening_message(self, student_name: str = None):
         name_str = f" {student_name}" if student_name and student_name.lower() != "student" else ""
-        opening = f"नमस्ते{name_str}! मैं आपकी AI interviewer Bodh हूँ। आज हम आपकी पढ़ाई और subjects के बारे में बात करेंगे। यहाँ कोई सही या गलत answers नहीं हैं। क्या हम शुरू करें?"
+        opening = f"नमस्ते{name_str}! मैं आपकी AI इंटरव्यूअर बोध हूँ। आज हम आपकी पढ़ाई और सब्जेक्ट्स के बारे में बात करेंगे। यहाँ कोई सही या गलत उत्तर नहीं हैं। क्या हम शुरू करें?"
         yield opening
 
 
