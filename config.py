@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     GOOGLE_API_KEY: Optional[str] = None
     DEEPGRAM_API_KEY: Optional[str] = None
     GROQ_API_KEY: Optional[str] = None
-    SARVAM_API_KEY: Optional[str] = None
+    SARVAM_API_KEY: Optional[str] = "sk_mabkyq4l_4pJjpwvbCxhY8JuXAQlfmzk5"
 
     LLM_PROVIDER: str = "gemini"
     GEMINI_MODEL: str = "gemini-3.5-flash-lite"

@@ -43,11 +43,8 @@ class DeepgramTTSImpl:
 class SarvamTTS:
     def __init__(self, sample_rate: int = 24000):
         self.sample_rate = sample_rate
-        self.api_key = getattr(settings, 'SARVAM_API_KEY', None) or os.getenv("SARVAM_API_KEY")
-        model_name = getattr(settings, 'SARVAM_TTS_MODEL', 'bulbul:v3')
-        if model_name in ('bulbul:v2', 'v2', 'bulbul-v2'):
-            model_name = 'bulbul:v3'
-        self.model = model_name
+        self.api_key = getattr(settings, 'SARVAM_API_KEY', None) or os.getenv("SARVAM_API_KEY") or "sk_mabkyq4l_4pJjpwvbCxhY8JuXAQlfmzk5"
+        self.model = "bulbul:v3"
         self.speaker = getattr(settings, 'SARVAM_TTS_SPEAKER', 'anushka')
         self.target_language = getattr(settings, 'SARVAM_TTS_LANGUAGE', 'hi-IN')
         self.fallback = DeepgramTTSImpl(sample_rate=self.sample_rate)
