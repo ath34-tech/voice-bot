@@ -232,6 +232,9 @@ class Pipeline:
 
     async def trigger_first_message(self):
         try:
+            # Give student browser 1.0s to complete WebRTC audio track subscription
+            await asyncio.sleep(1.0)
+
             student_name = None
             if self.state_manager and self.state_manager.state and "A01" in self.state_manager.state.answers:
                 ans = self.state_manager.state.answers["A01"]
