@@ -166,10 +166,6 @@ class Pipeline:
                     frame_data = audio_buffer[:BYTES_PER_FRAME]
                     audio_buffer = audio_buffer[BYTES_PER_FRAME:]
 
-                    # Start real-time pacing timer on arrival of the FIRST audio frame
-                    if playback_start is None:
-                        playback_start = time.time()
-
                     frame = rtc.AudioFrame(
                         data=frame_data,
                         sample_rate=self.sample_rate,
@@ -182,11 +178,8 @@ class Pipeline:
                     except Exception as frame_err:
                         logger.debug(f"Audio frame capture notice: {frame_err}")
 
-                    # WebRTC 10ms frame pacing
-                    target_time = playback_start + (frames_pushed * 0.010)
-                    sleep_time = target_time - time.time()
-                    if sleep_time > 0:
-                        await asyncio.sleep(sleep_time)
+                    # Smooth 8ms pacing for WebRTC audio queue (prevents buffer underruns & sleep spikes)
+                    await asyncio.sleep(0.008)
 
             # Pad residual bytes cleanly for the final frame
             if audio_buffer and not self._is_interrupted:
@@ -195,8 +188,18 @@ class Pipeline:
                 if len(audio_buffer) < BYTES_PER_FRAME:
                     audio_buffer += b'\x00' * (BYTES_PER_FRAME - len(audio_buffer))
 
-                if playback_start is None:
-                    playback_start = time.time()
+                frame_data = audio_buffer[:BYTES_PER_FRAME]
+                frame = rtc.AudioFrame(
+                    data=frame_data,
+                    sample_rate=self.sample_rate,
+                    num_channels=self.num_channels,
+                    samples_per_channel=SAMPLES_PER_FRAME
+                )
+                try:
+                    await self.audio_source.capture_frame(frame)
+                    await asyncio.sleep(0.008)
+                except Exception:
+                    pass
 
                 frame_data = audio_buffer[:BYTES_PER_FRAME]
                 frame = rtc.AudioFrame(
