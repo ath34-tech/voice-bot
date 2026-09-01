@@ -117,10 +117,8 @@ class SarvamTTS:
                     for i in range(0, len(raw_pcm), chunk_size):
                         yield raw_pcm[i:i + chunk_size]
         except Exception as e:
-            logger.error(f"Sarvam TTS synthesis failed: {e}. Falling back to Deepgram TTS...")
-            fallback_tts = DeepgramTTSImpl(sample_rate=self.sample_rate)
-            async for chunk in fallback_tts.stream_synthesize(text):
-                yield chunk
+            logger.error(f"🚨 Sarvam TTS synthesis error: {e}")
+            raise RuntimeError(f"Sarvam TTS Error: {e}")
 
 
 # Select DeepgramTTS or SarvamTTS based on TTS_PROVIDER ('deepgram' | 'sarvam')
