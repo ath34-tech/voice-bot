@@ -72,12 +72,14 @@ class LiveKitClient:
         self._audio_task = asyncio.create_task(_read_audio())
 
     def _create_token(self, room_name: str) -> str:
+        import uuid
+        bot_id = f"backend-bot-{room_name}-{uuid.uuid4().hex[:6]}"
         return (
             api.AccessToken(
                 settings.LIVEKIT_API_KEY,
                 settings.LIVEKIT_API_SECRET,
             )
-            .with_identity(f"backend-bot-{room_name}")
+            .with_identity(bot_id)
             .with_name(settings.BOT_NAME)
             .with_grants(
                 api.VideoGrants(

@@ -42,8 +42,12 @@ async def on_startup():
     # Automatically spawn LiveKit AI Voice Agent background worker
     logger.info("🚀 Auto-launching LiveKit AI Voice Agent process (agent.py)...")
     try:
-        subprocess.Popen([sys.executable, "agent.py"])
-        logger.info("✅ LiveKit AI Voice Agent launched successfully!")
+        import os
+        # Only launch if not already set by parent environment
+        if not os.environ.get("AGENT_ALREADY_LAUNCHED"):
+            os.environ["AGENT_ALREADY_LAUNCHED"] = "1"
+            subprocess.Popen([sys.executable, "agent.py"])
+            logger.info("✅ LiveKit AI Voice Agent launched successfully!")
     except Exception as agent_err:
         logger.error(f"⚠️ Failed to auto-launch agent.py: {agent_err}")
 

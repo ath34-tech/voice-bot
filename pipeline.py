@@ -212,8 +212,11 @@ class Pipeline:
     async def send_text_to_frontend(self, text: str, sender: str, is_stream: bool = False):
         import json
         payload = json.dumps({"sender": sender, "text": text, "is_stream": is_stream}).encode("utf-8")
-        if self.room.local_participant:
-            await self.room.local_participant.publish_data(payload)
+        try:
+            if self.room.local_participant and self.room.connection_state == rtc.ConnectionState.CONN_CONNECTED:
+                await self.room.local_participant.publish_data(payload)
+        except Exception as data_err:
+            logger.warning(f"Data channel publish notice: {data_err}")
 
     async def trigger_first_message(self):
         try:
