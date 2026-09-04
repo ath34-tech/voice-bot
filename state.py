@@ -86,9 +86,25 @@ class StateManager:
         return self.questionnaire.get_question(self.state.current_question)
 
     def apply_llm_response(self, llm_resp: ConversationalResponse):
-        """Advances state based on LLM decision."""
-        # Intercept FOLLOWUP if depth limit reached (per-question max_followups or default 3)
+        """Advances state based on LLM decision, enforcing answer locking before question progression."""
         current_q = self.get_current_question()
+
+        # Safety Guard: Do not allow premature NEXT_QUESTION if answer is not locked and clarification limit not reached
+        if llm_resp.action == "NEXT_QUESTION" and current_q:
+            q_id = current_q.id
+            if q_id not in self.state.answers and self.state.clarification_attempts < 2:
+                logger.warning(
+                    f"⚠️ Preventing premature NEXT_QUESTION for {q_id}: Answer is not locked in state "
+                    f"and clarification attempts ({self.state.clarification_attempts}) < 2. Overriding action to CLARIFY."
+                )
+                llm_resp.action = "CLARIFY"
+                self.state.clarification_attempts += 1
+                if not llm_resp.response or "next" in llm_resp.response.lower() or "अगला" in llm_resp.response:
+                    llm_resp.response = f"माफ़ कीजिये, मुझे आपका उत्तर समझ नहीं आया। {current_q.text}"
+                self.save_state()
+                return
+
+        # Intercept FOLLOWUP if depth limit reached (per-question max_followups or default 3)
         max_depth = (current_q.max_followups if current_q and current_q.max_followups is not None else 3)
         if llm_resp.action == "FOLLOWUP":
             if self.state.followup_depth >= max_depth:
@@ -138,8 +154,6 @@ class StateManager:
                     self.state.status = "completed"
 
         elif llm_resp.action == "SKIP" or llm_resp.action == "ERROR" or llm_resp.action == "COMPLETE":
-            # Similar logic based on your detailed rules...
-            # For brevity, basic advancement on skip/complete
             if llm_resp.action == "SKIP":
                 next_q = self.questionnaire.get_next_question(self.state.current_question)
                 if next_q:
@@ -155,14 +169,29 @@ class StateManager:
         # "REPEAT" does nothing to the state.
         self.save_state()
 
-    def apply_extraction(self, question_id: str, extraction_resp: ExtractionResponse, raw_text: str, turn_id: int):
-        if extraction_resp.answer and extraction_resp.answer_status == "answered":
-            self.state.answers[question_id] = Answer(
-                question_id=question_id,
-                raw_response=raw_text,
-                normalized_answer=extraction_resp.answer.value,
-                confidence=extraction_resp.answer.confidence,
-                turn_id=turn_id
-            )
-            logger.info(f"Background Extraction saved for {question_id}: {extraction_resp.answer.value}")
-            self.save_state()
+    def apply_extraction(self, question_id: str, extraction_resp: ExtractionResponse, raw_text: str, turn_id: int) -> bool:
+        if not extraction_resp:
+            return False
+
+        if extraction_resp.answer and extraction_resp.answer_status == "answered" and extraction_resp.answer.value:
+            val = str(extraction_resp.answer.value).strip()
+            if val:
+                if question_id in self.state.answers and self.state.is_in_followup:
+                    existing = self.state.answers[question_id]
+                    existing.raw_response += f" | Followup: {raw_text}"
+                    existing.normalized_answer = f"{existing.normalized_answer} (Followup: {val})"
+                else:
+                    self.state.answers[question_id] = Answer(
+                        question_id=question_id,
+                        raw_response=raw_text,
+                        normalized_answer=val,
+                        confidence=extraction_resp.answer.confidence or 0.95,
+                        turn_id=turn_id
+                    )
+                logger.info(f"✅ Answer LOCKED for {question_id}: {self.state.answers[question_id].normalized_answer}")
+                self.save_state()
+                return True
+
+        logger.warning(f"⚠️ Extraction for {question_id} not locked (Status: {extraction_resp.answer_status if extraction_resp else 'None'})")
+        return False
+

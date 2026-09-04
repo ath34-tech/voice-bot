@@ -95,32 +95,47 @@ class Pipeline:
                 # Add to memory
                 turn_id = self.memory_manager.add_student_turn(transcript)
 
-                # Build Context for LLM
                 current_question = self.state_manager.get_current_question()
-                next_q = self.state_manager.questionnaire.get_next_question(current_question.id) if current_question else None
-                prompt = self.memory_manager.build_llm_prompt(self.state_manager.state, current_question, next_q)
+                extraction_resp = None
+                is_locked = False
 
-                # Call LLM (Gemini / Groq)
+                # 1. Synchronous Extraction & Locking BEFORE decision or state transition
+                if current_question:
+                    q_id = current_question.id
+                    if q_id in self.state_manager.state.answers:
+                        is_locked = True
+
+                    extractor_prompt = self.memory_manager.build_extractor_prompt(current_question, transcript)
+                    extraction_resp = await self.llm.extract_answer(extractor_prompt)
+                    newly_locked = self.state_manager.apply_extraction(q_id, extraction_resp, transcript, turn_id)
+                    if newly_locked:
+                        is_locked = True
+
+                # 2. Build Context for LLM with exact locking status
+                next_q = self.state_manager.questionnaire.get_next_question(current_question.id) if current_question else None
+                prompt = self.memory_manager.build_llm_prompt(
+                    state=self.state_manager.state,
+                    current_question=current_question,
+                    next_question=next_q,
+                    extraction_resp=extraction_resp,
+                    is_locked=is_locked
+                )
+
+                # 3. Call LLM (Gemini)
                 llm_response = await self.llm.get_conversational_decision(prompt)
                 
+                # 4. Apply State Machine Transition (guaranteed to enforce answer locking safety)
+                self.state_manager.apply_llm_response(llm_response)
+
+                # 5. Send text to frontend & synthesize voice response
                 await self.send_text_to_frontend("", "AI", is_stream=False)
                 await self.send_text_to_frontend(llm_response.response, "AI", is_stream=True)
 
-                # Synthesize and speak Gemini's full response
                 if llm_response.response:
                     await self._speak(llm_response.response)
 
                 # Add AI response to memory
                 self.memory_manager.add_ai_turn(llm_response.response)
-
-                # If moving to next question, trigger extractor in background
-                if llm_response.action == "NEXT_QUESTION" and current_question:
-                    q_id = current_question.id
-                    extractor_prompt = self.memory_manager.build_extractor_prompt(current_question, transcript)
-                    asyncio.create_task(self._run_extractor(q_id, extractor_prompt, transcript, turn_id))
-
-                # Update State Machine
-                self.state_manager.apply_llm_response(llm_response)
 
                 if self.state_manager.state.status == "completed":
                     logger.info("Survey completed. AI session winding down.")
@@ -134,10 +149,6 @@ class Pipeline:
         except Exception as e:
             logger.error(f"Error in pipeline loop: {e}", exc_info=True)
 
-    async def _run_extractor(self, q_id: str, prompt: str, raw_text: str, turn_id: int):
-        logger.info(f"Triggering background extractor for {q_id}...")
-        extraction_resp = await self.llm.extract_answer(prompt)
-        self.state_manager.apply_extraction(q_id, extraction_resp, raw_text, turn_id)
 
     async def _speak(self, text: str):
         if not text or not text.strip():

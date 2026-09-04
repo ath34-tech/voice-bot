@@ -75,7 +75,14 @@ class MemoryManager:
             lines.append(f"{turn.speaker.upper()}: {turn.text}")
         return "\n".join(lines)
 
-    def build_llm_prompt(self, state: SurveyState, current_question: Question, next_question: Question = None) -> str:
+    def build_llm_prompt(
+        self, 
+        state: SurveyState, 
+        current_question: Question, 
+        next_question: Question = None,
+        extraction_resp: ExtractionResponse = None,
+        is_locked: bool = False
+    ) -> str:
         prompt = "SYSTEM & PERSONA RULES\n"
         prompt += "You are a warm, supportive FEMALE AI voice interviewer named Bodh (बोध) interviewing a Grade 7-8 student in India.\n"
         prompt += "GENDER RULE: Always use FEMALE Hindi grammar when referring to yourself (e.g., 'मैं आपकी AI interviewer हूँ', 'मैं समझ सकती हूँ', 'मैं पूछ रही हूँ').\n"
@@ -91,10 +98,11 @@ class MemoryManager:
         prompt += "3. NEVER output English alphabet letters (A-Z) in your JSON 'response' string! Writing pure Devanagari characters ensures Sarvam AI TTS speaks in a 100% authentic, beautiful native Indian Hindi voice!\n"
         prompt += "Keep responses short (1-2 concise spoken sentences). Speak with clear, confident warmth.\n\n"
         
-        prompt += "CURRENT SURVEY STATE\n"
+        prompt += "CURRENT SURVEY STATE & ANSWER LOCK STATUS\n"
         prompt += f"Status: {state.status}\n"
         prompt += f"Completed Questions: {', '.join(state.completed_questions)}\n"
-        prompt += f"In Followup Branch: {state.is_in_followup} (Depth: {state.followup_depth})\n\n"
+        prompt += f"In Followup Branch: {state.is_in_followup} (Depth: {state.followup_depth})\n"
+        prompt += f"Clarification Attempts: {state.clarification_attempts}/2\n"
         
         if current_question:
             prompt += "1. CURRENT QUESTION (EVALUATE THE USER'S ANSWER AGAINST THIS)\n"
@@ -102,7 +110,9 @@ class MemoryManager:
             prompt += f"Text: {current_question.text}\n"
             if current_question.options:
                 prompt += f"Options: {', '.join(current_question.options)}\n"
-            prompt += "\n"
+            ext_status = extraction_resp.answer_status if extraction_resp else ("answered" if is_locked else "pending")
+            ext_val = (extraction_resp.answer.value if (extraction_resp and extraction_resp.answer) else None) or (state.answers.get(current_question.id).normalized_answer if current_question.id in state.answers else "None")
+            prompt += f"EXTRACTION LOCK STATUS: Status='{ext_status}', Extracted Value='{ext_val}', ANSWER LOCKED={is_locked}\n\n"
             
         if next_question:
             prompt += "2. NEXT QUESTION (IF MOVING TO NEXT_QUESTION, ASK THIS NEXT)\n"
@@ -116,15 +126,6 @@ class MemoryManager:
         allow_fu = current_question and getattr(current_question, 'allow_followup', False) and state.followup_depth < q_max_fu
         action_options = '"NEXT_QUESTION" | "ASK" | "CLARIFY" | "FOLLOWUP" | "REPEAT" | "SKIP" | "COMPLETE"' if allow_fu else '"NEXT_QUESTION" | "ASK" | "CLARIFY" | "REPEAT" | "SKIP" | "COMPLETE"'
         
-        fu_instruction = ""
-        if allow_fu:
-            fu_instruction = f"""3. "FOLLOWUP" (PREFERRED WHEN ALLOWED): allow_followup=True for this question ({state.followup_depth}/{q_max_fu} follow-ups used so far).
-   - If the student's response is short, negative ("No", "Not comfortable"), custom, or expresses an interesting thought, YOU MUST PREFER "FOLLOWUP".
-   - Ask a warm, natural 1-sentence follow-up question (e.g., "What makes you feel uncomfortable?", "Why is that?", "Could you tell me a bit more about that?").
-4. "NEXT_QUESTION": Choose "NEXT_QUESTION" ONLY if you have reached the follow-up limit ({q_max_fu} max) OR if the student's answer is already fully comprehensive with nothing left to explore."""
-        else:
-            fu_instruction = """3. "NEXT_QUESTION": Choose "NEXT_QUESTION" to acknowledge their answer briefly in 2-4 supportive words (e.g., "Got it.", "That makes sense.") and ask 2. NEXT QUESTION."""
-
         prompt += f"""INSTRUCTIONS FOR YOUR RESPONSE:
 You MUST output ONLY a valid JSON object matching this exact schema:
 {{
@@ -132,12 +133,17 @@ You MUST output ONLY a valid JSON object matching this exact schema:
   "response": "The exact natural spoken text you will say aloud to the student."
 }}
 
-CRITICAL RULES FOR DECISION & RESPONSE:
-1. EVALUATE USER ANSWER: Evaluate the most recent USER turn against 1. CURRENT QUESTION. If the student gave a reasonable answer, ACCEPT IT!
-2. ZERO FUMBLES: Speak with total clarity and confidence. No filler words ('um', 'ah', 'well'), no markdown syntax, no lists, and no rigid question numbers.
-{fu_instruction}
-5. "CLARIFY" / "ASK": If the user gave an off-topic or completely unclear answer, use "CLARIFY" to ask a brief clarification about 1. CURRENT QUESTION.
-6. ONE QUESTION ONLY: NEVER ask two questions in a single turn. When choosing "NEXT_QUESTION", acknowledge the student's answer briefly in 2-4 supportive words and ask ONLY the NEXT QUESTION text.
+CRITICAL RULES FOR LOCKING & DECISION:
+1. STRICT LOCK REQUIREMENT:
+   - IF ANSWER LOCKED is False (and Extraction Status is 'ambiguous' or 'unknown'):
+     * If Clarification Attempts < 2: You MUST NOT select "NEXT_QUESTION"! Select "CLARIFY" or "ASK" to ask the student for a clear answer to 1. CURRENT QUESTION (e.g., "माफ़ कीजिये, मुझे आपका उत्तर समझ नहीं आया। कृपया 'हाँ' या 'नहीं' में जवाब दें।").
+     * If Clarification Attempts >= 2: Select "NEXT_QUESTION" to move forward.
+2. IF ANSWER LOCKED is True:
+   - If the student answered "Yes" or positive: DO NOT ask a follow-up. Select "NEXT_QUESTION" immediately to advance!
+   - If the student answered "No" or negative AND allow_followup=True and depth < {q_max_fu}: Select "FOLLOWUP" to ask 1 brief 1-sentence follow-up question about their answer.
+   - If follow-up depth reached {q_max_fu}: Select "NEXT_QUESTION" to advance.
+3. ZERO FUMBLES: Speak with total clarity and confidence. No filler words ('um', 'ah'), no markdown, and no rigid question numbers.
+4. ONE QUESTION ONLY: NEVER ask two questions in a single turn. When choosing "NEXT_QUESTION", acknowledge the student's answer briefly in 2-4 supportive words (e.g., "बहुत बढ़िया।", "समझ गई।") and ask ONLY the 2. NEXT QUESTION text.
 """
         return prompt
 
@@ -171,15 +177,17 @@ The JSON must follow this exact schema:
 
 CRITICAL EXTRACTION RULES:
 1. ALWAYS CAPTURE VALID ANSWERS: If the student gave a relevant response to the question, set 'answer_status' to 'answered'.
-2. STRICT YES/NO NORMALIZATION: If 'Allowed Options' contain ['Yes', 'No'], ANY affirmative spoken response ('हाँ', 'समझ आता है', 'yes', 'yeah', 'sure', 'bilkul', 'definitely', 'of course', 'true') MUST be extracted strictly as 'Yes'. ANY negative spoken response ('नहीं', 'nahi', 'no', 'never', 'difficult', 'not really') MUST be extracted strictly as 'No'. If they say 'kabhi kabhi' or 'sometimes', extract strictly as 'Sometimes'. NEVER output conversational text for Yes/No questions!
-3. OPTION MATCHING: For other multiple choice questions, set 'value' to the EXACT matching allowed option string.
-4. FLEXIBLE / CUSTOM ANSWERS: If the student gave a relevant answer that is NOT in 'Allowed Options' (e.g. saying "good marks", "motivation", "self study"), DO NOT set 'answer_status' to 'unknown'! Set 'answer_status' to 'answered' and set 'value' to a clean summary of their spoken response (e.g., "Motivation for good marks").
-4. RETENTION MAPPING (SC05/SC06):
+2. NUMERIC & PERCENTAGE ANSWERS (e.g. A04): If the question asks for percentage/marks, extract the numeric value clearly (e.g. '80%', '95%', '75%'). If they say 'about 90', extract '90%'.
+3. STRICT YES/NO NORMALIZATION: If 'Allowed Options' contain ['Yes', 'No'], ANY affirmative spoken response ('हाँ', 'समझ आता है', 'yes', 'yeah', 'sure', 'bilkul', 'definitely', 'of course', 'true') MUST be extracted strictly as 'Yes'. ANY negative spoken response ('नहीं', 'nahi', 'no', 'never', 'difficult', 'not really') MUST be extracted strictly as 'No'. If they say 'kabhi kabhi' or 'sometimes', extract strictly as 'Sometimes'.
+4. FREE TEXT / SUBJECTS (e.g. LM11, LM12, A01): If the question asks for a name, subject, or free text, set 'answer_status' to 'answered' and set 'value' to a clean title-cased string of the answer (e.g., 'Mathematics', 'Geography', 'Science').
+5. OPTION MATCHING: For other multiple choice questions, set 'value' to the EXACT matching allowed option string.
+6. RETENTION MAPPING (SC05/SC06):
    - "near about half", "around half", "half", "50%" -> "About half of it"
    - "most of it", "majority", "70%", "80%" -> "Most of it"
    - "almost all", "everything", "90%", "100%" -> "Almost everything"
    - "little bit", "small part", "20%", "30%" -> "Only a little bit"
    - "almost nothing", "hardly anything", "0%" -> "Almost nothing"
-5. 'unknown' STATUS: Set 'answer_status' to 'unknown' ONLY if the student's utterance is pure noise, off-topic, or completely unanswerable.
+7. 'unknown' STATUS: Set 'answer_status' to 'unknown' ONLY if the student's utterance is pure noise, silence, or completely unanswerable.
 """
         return prompt
+
