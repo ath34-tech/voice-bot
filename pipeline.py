@@ -45,6 +45,8 @@ class Pipeline:
         self.memory_manager = MemoryManager(self.session_id)
         self.finish_answer_event = asyncio.Event()
         self.current_user_transcript = ""
+        self.accumulated_speech = ""
+        self._stt_task = None
 
     def _handle_interruption(self, text: str = ""):
         # Ignore mic speaker echo to prevent false self-interruption
@@ -60,6 +62,7 @@ class Pipeline:
     async def start(self):
         logger.info("Connecting to STT...")
         await self.stt.connect()
+        self._stt_task = asyncio.create_task(self._listen_stt_loop())
         self._main_task = asyncio.create_task(self._process_loop())
         logger.info("Pipeline started.")
 
@@ -71,6 +74,8 @@ class Pipeline:
     async def stop(self):
         if self._main_task:
             self._main_task.cancel()
+        if self._stt_task:
+            self._stt_task.cancel()
         await self.stt.disconnect()
         if self.bot_publication:
             await self.room.local_participant.unpublish_track(self.bot_publication.sid)
@@ -87,30 +92,48 @@ class Pipeline:
         audio_data = bytes(frame.data)
         await self.stt.send_audio(audio_data)
 
-    async def _process_loop(self):
+    async def _listen_stt_loop(self):
+        """Continuously receives speech chunks and accumulates full response context for the active question."""
         try:
             while True:
                 transcript = await self.stt.receive_transcript()
                 if not transcript:
                     continue
 
-                clean_transcript = transcript.strip().rstrip(".").strip()
-                if not clean_transcript or len(clean_transcript) < 2:
+                clean_chunk = transcript.strip().rstrip(".").strip()
+                if not clean_chunk or len(clean_chunk) < 2:
                     continue
 
-                logger.info(f"🎤 User (Speech captured): {transcript}")
-                self.current_user_transcript = transcript
-                await self.send_text_to_frontend(transcript, "User")
-                
-                # Wait up to 7s for user to click "Finish Answer" button (or trigger immediately if button clicked)
-                self.finish_answer_event.clear()
-                try:
-                    await asyncio.wait_for(self.finish_answer_event.wait(), timeout=7.0)
-                    logger.info("✅ Finish Answer button clicked by student!")
-                except asyncio.TimeoutError:
-                    logger.info("⏱️ User did not click Finish Answer within 7s. Auto-evaluating answer...")
+                if not self.accumulated_speech:
+                    self.accumulated_speech = clean_chunk
+                else:
+                    self.accumulated_speech += " " + clean_chunk
 
-                final_text = self.current_user_transcript or transcript
+                logger.info(f"🎤 Accumulated Student Speech Context: '{self.accumulated_speech}'")
+                await self.send_text_to_frontend(self.accumulated_speech, "User")
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error(f"Error in STT listener loop: {e}", exc_info=True)
+
+    async def _process_loop(self):
+        """Waits strictly for student to click 'Finish Answer' button before evaluating answer and advancing."""
+        try:
+            while True:
+                self.finish_answer_event.clear()
+                logger.info("⏳ Waiting for student to click Finish Answer button...")
+                await self.finish_answer_event.wait()
+
+                final_text = (self.current_user_transcript or self.accumulated_speech or "").strip()
+                logger.info(f"✅ Student clicked Finish Answer button! Processing full speech: '{final_text}'")
+
+                # Reset speech buffer for the next question
+                self.accumulated_speech = ""
+                self.current_user_transcript = ""
+
+                if not final_text or len(final_text) < 2:
+                    logger.warning("Finish answer clicked with empty transcript. Treating as blank response.")
+                    final_text = "Unclear answer"
 
                 # Add to memory
                 turn_id = self.memory_manager.add_student_turn(final_text)
@@ -168,6 +191,7 @@ class Pipeline:
             logger.info("Pipeline loop cancelled.")
         except Exception as e:
             logger.error(f"Error in pipeline loop: {e}", exc_info=True)
+
 
 
 
