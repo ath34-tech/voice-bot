@@ -55,6 +55,18 @@ class LiveKitClient:
                     print(f"🔊 Microphone track subscribed! Triggering opening greeting...")
                     asyncio.create_task(self.pipeline.trigger_first_message())
 
+        @self.room.on("data_received")
+        def on_data_received(dp: rtc.DataPacket):
+            try:
+                payload = dp.data.decode("utf-8")
+                import json
+                msg = json.loads(payload)
+                if self.pipeline:
+                    self.pipeline.handle_data_message(msg)
+            except Exception as e:
+                print(f"Data received notice: {e}")
+
+
     def _start_audio_stream(self, track: rtc.RemoteAudioTrack):
         # Force AudioStream to resample audio to 48kHz / 1 channel
         self._audio_stream = rtc.AudioStream(track, sample_rate=48000, num_channels=1)

@@ -43,10 +43,19 @@ class Pipeline:
         self.session_id = session_id
         self.state_manager = StateManager(self.session_id)
         self.memory_manager = MemoryManager(self.session_id)
+        self.finish_answer_event = asyncio.Event()
+        self.current_user_transcript = ""
 
     def _handle_interruption(self, text: str = ""):
         # Ignore mic speaker echo to prevent false self-interruption
         pass
+
+    def handle_data_message(self, msg: dict):
+        if msg.get("action") == "FINISH_ANSWER" or msg.get("type") == "FINISH_ANSWER":
+            logger.info("📩 Received FINISH_ANSWER button click from client!")
+            if msg.get("text"):
+                self.current_user_transcript = msg.get("text")
+            self.finish_answer_event.set()
 
     async def start(self):
         logger.info("Connecting to STT...")
@@ -89,11 +98,22 @@ class Pipeline:
                 if not clean_transcript or len(clean_transcript) < 2:
                     continue
 
-                logger.info(f"🎤 User (Final 3.5s Endpoint): {transcript}")
+                logger.info(f"🎤 User (Speech captured): {transcript}")
+                self.current_user_transcript = transcript
                 await self.send_text_to_frontend(transcript, "User")
                 
+                # Wait up to 7s for user to click "Finish Answer" button (or trigger immediately if button clicked)
+                self.finish_answer_event.clear()
+                try:
+                    await asyncio.wait_for(self.finish_answer_event.wait(), timeout=7.0)
+                    logger.info("✅ Finish Answer button clicked by student!")
+                except asyncio.TimeoutError:
+                    logger.info("⏱️ User did not click Finish Answer within 7s. Auto-evaluating answer...")
+
+                final_text = self.current_user_transcript or transcript
+
                 # Add to memory
-                turn_id = self.memory_manager.add_student_turn(transcript)
+                turn_id = self.memory_manager.add_student_turn(final_text)
 
                 current_question = self.state_manager.get_current_question()
                 extraction_resp = None
@@ -105,9 +125,9 @@ class Pipeline:
                     if q_id in self.state_manager.state.answers:
                         is_locked = True
 
-                    extractor_prompt = self.memory_manager.build_extractor_prompt(current_question, transcript)
+                    extractor_prompt = self.memory_manager.build_extractor_prompt(current_question, final_text)
                     extraction_resp = await self.llm.extract_answer(extractor_prompt)
-                    newly_locked = self.state_manager.apply_extraction(q_id, extraction_resp, transcript, turn_id)
+                    newly_locked = self.state_manager.apply_extraction(q_id, extraction_resp, final_text, turn_id)
                     if newly_locked:
                         is_locked = True
 
@@ -148,6 +168,7 @@ class Pipeline:
             logger.info("Pipeline loop cancelled.")
         except Exception as e:
             logger.error(f"Error in pipeline loop: {e}", exc_info=True)
+
 
 
     async def _speak(self, text: str):
