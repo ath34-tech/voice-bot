@@ -124,12 +124,17 @@ class Pipeline:
                 logger.info("⏳ Waiting for student to click Finish Answer button...")
                 await self.finish_answer_event.wait()
 
-                final_text = (self.current_user_transcript or self.accumulated_speech or "").strip()
-                logger.info(f"✅ Student clicked Finish Answer button! Processing full speech: '{final_text}'")
+                # Select the complete accumulated speech context
+                text_a = (self.current_user_transcript or "").strip()
+                text_b = (self.accumulated_speech or "").strip()
+                final_text = text_a if len(text_a) >= len(text_b) else text_b
+
+                logger.info(f"✅ Student clicked Finish Answer button! Final speech context: '{final_text}'")
 
                 # Reset speech buffer for the next question
                 self.accumulated_speech = ""
                 self.current_user_transcript = ""
+
 
                 if not final_text or len(final_text) < 2:
                     logger.warning("Finish answer clicked with empty transcript. Treating as blank response.")
