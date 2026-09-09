@@ -82,6 +82,9 @@ def generate_user_token(room_name: str, identity: str = "human-user") -> str:
 active_bots: Dict[str, Any] = {}
 
 async def spawn_bot_instance_for_room(room_name: str, student_name: str = None, student_grade: str = None):
+    if room_name in active_bots:
+        logger.info(f"Bot already active for room '{room_name}'. Skipping duplicate spawn.")
+        return
     try:
         from rooms import LiveKitClient
         from pipeline import Pipeline
@@ -96,6 +99,7 @@ async def spawn_bot_instance_for_room(room_name: str, student_name: str = None, 
         logger.info(f"✅ AI Voice Bot Pipeline instance active and joined room '{room_name}'!")
     except Exception as err:
         logger.error(f"Error spawning bot instance for room '{room_name}': {err}")
+
 
 
 @app.get("/health", status_code=status.HTTP_200_OK)
