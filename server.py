@@ -33,23 +33,9 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def on_startup():
-    import subprocess
-    import sys
     logger.info("Initializing database connection...")
     await database.init_db()
     logger.info("Bodh API Server started successfully.")
-    
-    # Automatically spawn LiveKit AI Voice Agent background worker
-    logger.info("🚀 Auto-launching LiveKit AI Voice Agent process (agent.py)...")
-    try:
-        import os
-        # Only launch if not already set by parent environment
-        if not os.environ.get("AGENT_ALREADY_LAUNCHED"):
-            os.environ["AGENT_ALREADY_LAUNCHED"] = "1"
-            subprocess.Popen([sys.executable, "agent.py"])
-            logger.info("✅ LiveKit AI Voice Agent launched successfully!")
-    except Exception as agent_err:
-        logger.error(f"⚠️ Failed to auto-launch agent.py: {agent_err}")
 
 
 class StartCallRequest(BaseModel):
@@ -93,6 +79,25 @@ def generate_user_token(room_name: str, identity: str = "human-user") -> str:
     )
 
 
+active_bots: Dict[str, Any] = {}
+
+async def spawn_bot_instance_for_room(room_name: str, student_name: str = None, student_grade: str = None):
+    try:
+        from rooms import LiveKitClient
+        from pipeline import Pipeline
+        logger.info(f"⚡ Instantiating AI Voice Bot Pipeline directly for room '{room_name}'...")
+        client = LiveKitClient()
+        client.pipeline = Pipeline(client.room, session_id=room_name)
+        client.pipeline.state_manager.start_survey(student_name=student_name, student_grade=student_grade)
+        await client.pipeline.start()
+        await client.connect(room_name)
+        await client.pipeline.publish_bot_track()
+        active_bots[room_name] = client
+        logger.info(f"✅ AI Voice Bot Pipeline instance active and joined room '{room_name}'!")
+    except Exception as err:
+        logger.error(f"Error spawning bot instance for room '{room_name}': {err}")
+
+
 @app.get("/health", status_code=status.HTTP_200_OK)
 async def health_check():
     """Liveness health check endpoint for Render monitoring."""
@@ -106,7 +111,8 @@ async def start_call(req: Optional[StartCallRequest] = None):
     1. Validates student and school information.
     2. Persists student & session records in PostgreSQL / SQLite.
     3. Generates a unique LiveKit room name.
-    4. Generates a secure LiveKit JWT access token for the client.
+    4. Immediately instantiates and binds the AI Voice Bot Pipeline object to the room.
+    5. Generates a secure LiveKit JWT access token for the client.
     """
     try:
         body = req if req is not None else StartCallRequest()
@@ -145,11 +151,15 @@ async def start_call(req: Optional[StartCallRequest] = None):
         except Exception as room_err:
             logger.debug(f"LiveKit room creation notice: {room_err}")
 
-        # 3. Generate Client LiveKit Token
+        # 3. Immediately spin up the AI Voice Bot Pipeline instance directly for this room
+        import asyncio
+        asyncio.create_task(spawn_bot_instance_for_room(room_name, name, grade))
+
+        # 4. Generate Client LiveKit Token
         user_token = generate_user_token(room_name)
 
         logger.info(
-            f"Session created: room={room_name}, student_id={student_id}, "
+            f"Session created & bot instantiated: room={room_name}, student_id={student_id}, "
             f"school={school_code}, student_name='{name}'"
         )
 
@@ -160,6 +170,7 @@ async def start_call(req: Optional[StartCallRequest] = None):
             user_token=user_token,
             livekit_url=settings.LIVEKIT_URL
         )
+
 
     except HTTPException:
         raise
