@@ -131,7 +131,18 @@ async def start_call(req: Optional[StartCallRequest] = None):
         except Exception as room_err:
             logger.debug(f"LiveKit room creation notice: {room_err}")
 
-        # 3. Generate Client LiveKit Access Token
+        # 3. Notify Agent Worker to spawn bot instance immediately
+        import os
+        import aiohttp
+        agent_url = os.getenv("AGENT_URL", "http://127.0.0.1:10000")
+        try:
+            async with aiohttp.ClientSession() as session:
+                await session.post(f"{agent_url}/spawn_bot", json={"room_name": room_name}, timeout=2.0)
+                logger.info(f"⚡ Dispatched direct spawn signal for room '{room_name}' to {agent_url}")
+        except Exception as notify_err:
+            logger.debug(f"Direct agent notification notice: {notify_err}")
+
+        # 4. Generate Client LiveKit Access Token
         user_token = generate_user_token(room_name)
 
         logger.info(
