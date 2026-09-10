@@ -40,11 +40,14 @@ services:
   # ==========================================
   # 2. LiveKit Agent Background Worker (bodh-agent)
   # ==========================================
-  - type: worker
+  - type: web
     name: bodh-agent
     env: docker
     dockerfilePath: Dockerfile.agent
+    healthCheckPath: /health
     envVars:
+      - key: PORT
+        value: 10000
       - key: APP_ENV
         value: production
       - key: DATABASE_URL

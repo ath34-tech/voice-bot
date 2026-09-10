@@ -94,16 +94,6 @@ class MultiRoomAgentManager:
                     # 1. Spawn AI Bot for any newly detected active student room
                     for r_name in active_room_names:
                         if r_name not in self.active_bots:
-                            # Check if a bot participant is already inside the room (e.g. spawned on start_call)
-                            try:
-                                parts_res = await lk_api.room.list_participants(api.ListParticipantsRequest(room=r_name))
-                                has_bot = any("bot" in (p.identity or "").lower() for p in parts_res.participants)
-                                if has_bot:
-                                    logger.info(f"Bot participant already active in room '{r_name}'. Skipping duplicate spawn.")
-                                    continue
-                            except Exception:
-                                pass
-
                             logger.info(f"⚡ New student room detected: '{r_name}'! Spawning AI Voice Bot...")
                             try:
                                 client = LiveKitClient()
