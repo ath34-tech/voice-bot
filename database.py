@@ -22,7 +22,11 @@ elif db_url.startswith("sqlite://") and not db_url.startswith("sqlite+aiosqlite:
 engine = create_async_engine(
     db_url,
     echo=False,
-    future=True
+    future=True,
+    pool_size=5,
+    max_overflow=5,
+    pool_recycle=300,
+    pool_pre_ping=True
 )
 
 AsyncSessionLocal = async_sessionmaker(

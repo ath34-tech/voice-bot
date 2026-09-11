@@ -31,12 +31,40 @@ app.add_middleware(
 )
 
 
+_lk_api: Optional[api.LiveKitAPI] = None
+
+def get_lk_api() -> Optional[api.LiveKitAPI]:
+    global _lk_api
+    if _lk_api is None:
+        try:
+            api_url = settings.LIVEKIT_URL
+            if api_url.startswith("wss://"):
+                api_url = api_url.replace("wss://", "https://", 1)
+            elif api_url.startswith("ws://"):
+                api_url = api_url.replace("ws://", "http://", 1)
+            _lk_api = api.LiveKitAPI(api_url, settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET)
+        except Exception as e:
+            logger.warning(f"LiveKitAPI client init notice: {e}")
+    return _lk_api
+
+
 @app.on_event("startup")
 async def on_startup():
     logger.info("Initializing database connection...")
     await database.init_db()
     key_snippet = (settings.LIVEKIT_API_KEY[:6] + "...") if settings.LIVEKIT_API_KEY else "NONE"
     logger.info(f"🔑 Bodh API Server started! LiveKit URL={settings.LIVEKIT_URL}, Key={key_snippet}")
+
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    global _lk_api
+    if _lk_api is not None:
+        try:
+            await _lk_api.aclose()
+        except Exception:
+            pass
+        _lk_api = None
 
 
 class StartCallRequest(BaseModel):
@@ -175,16 +203,9 @@ async def start_call(req: Optional[StartCallRequest] = None):
 
         # 2. Explicitly create room on LiveKit Cloud
         try:
-            from livekit import api
-            api_url = settings.LIVEKIT_URL
-            if api_url.startswith("wss://"):
-                api_url = api_url.replace("wss://", "https://", 1)
-            elif api_url.startswith("ws://"):
-                api_url = api_url.replace("ws://", "http://", 1)
-
-            lk_api = api.LiveKitAPI(api_url, settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET)
-            await lk_api.room.create_room(api.CreateRoomRequest(name=room_name))
-            await lk_api.aclose()
+            lk_client = get_lk_api()
+            if lk_client:
+                await lk_client.room.create_room(api.CreateRoomRequest(name=room_name))
         except Exception as room_err:
             logger.debug(f"LiveKit room creation notice: {room_err}")
 
