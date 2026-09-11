@@ -93,7 +93,8 @@ class MultiRoomAgentManager:
             logger.error(f"Error spawning bot for room '{r_name}': {spawn_err}", exc_info=True)
 
     async def run(self):
-        logger.info(f"🚀 Starting Bodh Multi-Room Agent Worker connected to {settings.LIVEKIT_URL}...")
+        key_snippet = (settings.LIVEKIT_API_KEY[:6] + "...") if settings.LIVEKIT_API_KEY else "NONE"
+        logger.info(f"🚀 Starting Bodh Multi-Room Agent Worker! LiveKit URL={settings.LIVEKIT_URL}, Key={key_snippet}")
         await database.init_db()
         asyncio.create_task(start_health_server(self))
 
@@ -107,6 +108,7 @@ class MultiRoomAgentManager:
         logger.info(f"✅ Multi-Room Manager active! Monitoring rooms on LiveKit Cloud API ({api_url})...")
 
         poll_counter = 0
+        last_room_names = None
         while True:
             try:
                 api_url = settings.LIVEKIT_URL
@@ -126,7 +128,8 @@ class MultiRoomAgentManager:
                     active_room_names = [r.name for r in res.rooms if r.name and not r.name.startswith("system-")]
 
                     poll_counter += 1
-                    if poll_counter % 30 == 1 or active_room_names:
+                    if active_room_names != last_room_names or poll_counter % 30 == 1:
+                        last_room_names = list(active_room_names)
                         logger.info(f"📡 LiveKit Room Check: {len(active_room_names)} active room(s) {active_room_names}")
 
                     # 1. Spawn AI Bot for any newly detected active student room

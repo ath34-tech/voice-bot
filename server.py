@@ -35,7 +35,8 @@ app.add_middleware(
 async def on_startup():
     logger.info("Initializing database connection...")
     await database.init_db()
-    logger.info("Bodh API Server started successfully.")
+    key_snippet = (settings.LIVEKIT_API_KEY[:6] + "...") if settings.LIVEKIT_API_KEY else "NONE"
+    logger.info(f"🔑 Bodh API Server started! LiveKit URL={settings.LIVEKIT_URL}, Key={key_snippet}")
 
 
 class StartCallRequest(BaseModel):
@@ -51,6 +52,62 @@ class CallResponse(BaseModel):
     ws_url: str
     user_token: str
     livekit_url: str
+
+
+async def _notify_agent_to_spawn(room_name: str):
+    """Notifies agent worker to spawn a bot for room_name, avoiding self-looping on the API port."""
+    import os, aiohttp
+    my_port = os.getenv("PORT", "8000")
+    urls_to_try = [
+        os.getenv("AGENT_URL"),
+        "http://bodh-agent:10000",
+        "http://bodh-agent:8000",
+        "http://127.0.0.1:10001",
+    ]
+    # Filter out empty entries and any loopback URL pointing to self (same port as API)
+    target_urls = []
+    for u in urls_to_try:
+        if u:
+            clean_u = u.rstrip("/")
+            if f":{my_port}" in clean_u and ("127.0.0.1" in clean_u or "localhost" in clean_u):
+                continue  # Skip self-looping call to API server port
+            if clean_u not in target_urls:
+                target_urls.append(clean_u)
+
+    for base_url in target_urls:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(f"{base_url}/spawn_bot", json={"room_name": room_name}, timeout=2.0) as resp:
+                    if resp.status == 200:
+                        logger.info(f"⚡ Dispatched direct spawn signal for room '{room_name}' to {base_url}")
+                        return
+        except Exception:
+            pass
+    logger.debug(f"Direct agent notification attempted ({target_urls}) — falling back to LiveKit Cloud polling.")
+
+
+@app.post("/spawn_bot")
+async def spawn_bot_proxy(payload: Dict[str, Any]):
+    """Proxies direct spawn requests to the background agent worker service."""
+    room_name = payload.get("room_name")
+    if not room_name:
+        raise HTTPException(status_code=400, detail="Missing room_name parameter")
+
+    agent_url = os.getenv("AGENT_URL", "http://bodh-agent:10000").rstrip("/")
+    import aiohttp
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(f"{agent_url}/spawn_bot", json={"room_name": room_name}, timeout=3.0) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    return data
+                else:
+                    err_txt = await resp.text()
+                    logger.warning(f"Agent worker returned {resp.status}: {err_txt}")
+                    return {"status": "error", "detail": err_txt}
+    except Exception as e:
+        logger.error(f"Error forwarding /spawn_bot to agent worker at {agent_url}: {e}")
+        raise HTTPException(status_code=502, detail=f"Failed to reach agent worker: {str(e)}")
 
 
 def generate_user_token(room_name: str, identity: str = "human-user") -> str:
@@ -132,15 +189,7 @@ async def start_call(req: Optional[StartCallRequest] = None):
             logger.debug(f"LiveKit room creation notice: {room_err}")
 
         # 3. Notify Agent Worker to spawn bot instance immediately
-        import os
-        import aiohttp
-        agent_url = os.getenv("AGENT_URL", "http://127.0.0.1:10000")
-        try:
-            async with aiohttp.ClientSession() as session:
-                await session.post(f"{agent_url}/spawn_bot", json={"room_name": room_name}, timeout=2.0)
-                logger.info(f"⚡ Dispatched direct spawn signal for room '{room_name}' to {agent_url}")
-        except Exception as notify_err:
-            logger.debug(f"Direct agent notification notice: {notify_err}")
+        await _notify_agent_to_spawn(room_name)
 
         # 4. Generate Client LiveKit Access Token
         user_token = generate_user_token(room_name)
